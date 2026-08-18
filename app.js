@@ -39,7 +39,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.schemaVersion === 16) return parsed;
+        if (parsed && parsed.schemaVersion === 17) return parsed;
       }
     } catch (error) {
       console.warn('无法读取本地演示数据', error);
@@ -219,6 +219,10 @@
     return db.schools.map((s) => s.id);
   }
 
+  function visibleSchoolIds() {
+    return ui.role === 'school' ? [ui.schoolId] : db.schools.map((item) => item.id);
+  }
+
   function formalAnomalies(items) {
     return items.flatMap((c) => c.anomalies.map((a) => ({ ...a, clueId: c.id, sessionId: c.sessionId })))
       .filter((a) => a.result === 'formal' && !a.deleted);
@@ -316,13 +320,15 @@
       teacher: '<circle cx="12" cy="7" r="3"/><path d="M6.5 21v-2.5a5.5 5.5 0 0 1 11 0V21M18 5l2 2-2 2M6 5 4 7l2 2"/>',
       organization: '<path d="M5 20V5l7-3 7 3v15M3 20h18M8 9h1M8 13h1M15 9h1M15 13h1M11 20v-3h2v3"/>',
       bell: '<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
-      refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>'
+      refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+      help: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-.9.5-1.5 1.1-1.5 2.2M12 17h.01"/>'
     };
     return `<svg class="ui-icon${extraClass ? ` ${extraClass}` : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.course}</svg>`;
   }
 
   function shell(pageResult, activePage) {
-    const unread = db.notifications.filter((n) => !n.read).length;
+    const schoolIds = visibleSchoolIds();
+    const unread = db.notifications.filter((n) => !n.read && schoolIds.includes(n.schoolId)).length;
     const navItems = [
       ['dashboard', '巡课看板'], ['clues', '分析结果'], ['rules', '巡课规则']
     ];
@@ -331,8 +337,10 @@
         <div class="brand-area"><div class="brand-mark">三</div><div class="brand-name">三个课堂平台</div></div>
         <nav class="global-nav" aria-label="平台模块"><span class="active">首页</span><span>数据中心</span><span>名师课堂</span><span>专递课堂</span><span>名校网络课堂</span><span>教学成果</span><span>精品课</span></nav>
         <div class="top-actions">
+          <span class="demo-version-pill">演示数据 · ${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.54')}</span>
           <div class="role-switch"><button data-role="school" class="${ui.role === 'school' ? 'active' : ''}">校级管理员</button><button data-role="region" class="${ui.role === 'region' ? 'active' : ''}">区域管理员</button></div>
-          <button class="icon-btn" title="刷新数据" aria-label="刷新数据" data-action="refresh">${icon('refresh')}</button>
+          <button class="icon-btn" title="打开演示指南" aria-label="打开演示指南" data-action="guide">${icon('help')}</button>
+          <button class="icon-btn" title="恢复演示数据" aria-label="恢复演示数据" data-action="refresh">${icon('refresh')}</button>
           <button class="icon-btn" title="打开消息中心" aria-label="打开消息中心，${unread} 条未查看" data-action="messages">${icon('bell')}${unread ? `<span class="dot">${unread}</span>` : ''}</button>
           <div class="avatar">${ui.role === 'school' ? '林' : '宋'}</div>
         </div>
@@ -366,9 +374,26 @@
       renderApp();
     }));
     const refresh = document.querySelector('[data-action="refresh"]');
-    if (refresh) refresh.addEventListener('click', () => { renderApp(); toast('数据已刷新'); });
+    if (refresh) refresh.addEventListener('click', () => { showModal({title:'恢复演示数据',body:'<div class="warning-box">将清除当前浏览器内的规则修改、结果调整、点评和消息已读状态，并恢复为固定演示数据。</div>',confirmText:'确认恢复',onConfirm:()=>{resetDB();renderApp();toast('演示数据已恢复');}}); });
     const messages = document.querySelector('[data-action="messages"]');
     if (messages) messages.addEventListener('click', () => navigate('messages'));
+    document.querySelector('[data-action="guide"]')?.addEventListener('click', showDemoGuide);
+  }
+
+  function showDemoGuide() {
+    const body = `<div class="demo-guide-intro"><span class="demo-version-pill">${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.54')}</span><div><strong>AI 巡课完整演示路径</strong><p>全部姓名、课堂、消息和识别结果均为虚构演示数据；页面修改仅保存在当前浏览器。</p></div></div>
+      <ol class="demo-story-list">
+        <li><strong>发现需要关注的课堂</strong><span>在巡课看板查看“建议优先查看”，进入分析结果。</span></li>
+        <li><strong>理解 AI 为什么提示</strong><span>在课堂详情查看异常时间、证据画面、判定定义和识别可信度。</span></li>
+        <li><strong>调整当前结果</strong><span>通过秩序管理新增、修改或删除异常，保存后同步刷新统计。</span></li>
+        <li><strong>验证消息闭环</strong><span>进入消息中心查看正式、更正和撤回通知。</span></li>
+        <li><strong>维护学校规则</strong><span>查看指标字典、逐观测点判定定义、通知角色和规则生效范围。</span></li>
+      </ol>
+      <div class="demo-guide-note"><strong>状态边界</strong><span>等待视频、分析中、部分指标无结论、分析失败和视频已删除均不会被包装为“正常课堂”。</span></div>
+      <div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button><button class="btn primary" id="guide-start">从看板开始</button></div>`;
+    showDrawer('演示指南', body);
+    portal.querySelector('[data-drawer-close-action]')?.addEventListener('click', closePortal);
+    portal.querySelector('#guide-start')?.addEventListener('click', () => { closePortal(); navigate('dashboard'); });
   }
 
   function metricCard(label, value, unit, color, drillable) {
@@ -456,6 +481,21 @@
       };
     }).sort((a,b) => b.anomalyCount-a.anomalyCount || b.analyzedClasses-a.analyzedClasses);
     const focusClues = clues.slice().sort((a,b) => new Date(session(b.sessionId).startAt)-new Date(session(a.sessionId).startAt)).slice(0,5);
+    const actionQueue = clues.filter((item) => item.anomalies.some((anomaly) => !anomaly.deleted)).slice().sort((a, b) => {
+      const aRepeat = a.anomalies.some((item) => !item.deleted && item.repeat) ? 1 : 0;
+      const bRepeat = b.anomalies.some((item) => !item.deleted && item.repeat) ? 1 : 0;
+      const aCount = a.anomalies.filter((item) => !item.deleted).length;
+      const bCount = b.anomalies.filter((item) => !item.deleted).length;
+      return bRepeat - aRepeat || bCount - aCount || new Date(session(b.sessionId).startAt) - new Date(session(a.sessionId).startAt);
+    }).slice(0, 3);
+    const stateCounts = {
+      waiting: tasks.filter((item) => item.status === 'waiting').length,
+      analyzing: tasks.filter((item) => item.status === 'analyzing').length,
+      partial: tasks.filter((item) => item.status === 'partial').length,
+      failed: tasks.filter((item) => item.status === 'failed').length,
+      deleted: tasks.filter((item) => item.videoStatus === 'deleted').length
+    };
+    const stateTaskCount = tasks.filter((item) => ['waiting', 'analyzing', 'partial', 'failed'].includes(item.status) || item.videoStatus === 'deleted').length;
     const isSchoolDrilldown = ui.role === 'region' && ui.dashboardSchoolId && ui.dashboardSchoolId !== 'all';
     const currentLabel = ui.role === 'region' ? (isSchoolDrilldown ? school(ui.dashboardSchoolId).name : '青川区区域汇总') : school(ui.schoolId).name;
     const dashboardSubtitle = isSchoolDrilldown
@@ -472,6 +512,16 @@
         <select class="control" id="dashboard-category">${option('all','全部问题',ui.dashboardCategory)}${categoryFilterOptions(ui.dashboardCategory)}</select>
       </div>
       <div class="metrics">${metrics.map((m,i) => metricCard(m[0],m[1],m[2],['#eef4ff','#effaf4','#fff6e7','#f4efff','#fff0f1','#edf7ff'][i],m[3])).join('')}</div>
+      <div class="dashboard-guidance-grid">
+        <div class="card action-queue-card"><div class="card-header"><div><div class="card-title">建议优先查看</div><div class="muted">按重复出现、异常项数量和发生时间排序</div></div><button class="text-link" id="view-action-queue">查看全部结果</button></div><div class="action-queue-list">${actionQueue.length ? actionQueue.map((item) => {
+          const itemSession = session(item.sessionId);
+          const itemAnomalies = item.anomalies.filter((anomaly) => !anomaly.deleted);
+          const hasRepeat = itemAnomalies.some((anomaly) => anomaly.repeat);
+          const reason = hasRepeat ? '同类问题在规则周期内重复出现' : `${itemAnomalies.length} 项异常需要结合证据查看`;
+          return `<button class="action-queue-row" data-focus-clue="${item.id}"><span class="action-queue-time">${fmtDate(itemSession.startAt)}</span><span class="action-queue-main"><strong>${escapeHtml(person(itemSession.teacherId)?.name || '—')} · ${escapeHtml(klass(itemSession.classId)?.name || '—')}</strong><small>${escapeHtml(reason)}</small></span><span class="action-queue-link">查看证据 ›</span></button>`;
+        }).join('') : '<div class="empty-state compact"><div>当前筛选范围内没有需要关注的课堂</div></div>'}</div></div>
+        <div class="card analysis-state-card"><div class="card-header"><div><div class="card-title">分析状态说明</div><div class="muted">未完成分析不计入正常结论</div></div><button class="text-link" id="open-analysis-status">查看说明</button></div><div class="analysis-state-summary"><div><span>等待视频</span><strong>${stateCounts.waiting}</strong></div><div><span>分析中</span><strong>${stateCounts.analyzing}</strong></div><div><span>部分无结论</span><strong>${stateCounts.partial}</strong></div><div><span>分析失败</span><strong>${stateCounts.failed}</strong></div></div><p>${stateTaskCount ? `当前范围内有 ${stateTaskCount} 节课堂存在非完整状态，系统不会将缺失结果计为正常。` : '当前范围内课堂均已完成完整分析。'}</p></div>
+      </div>
       <div class="grid-2"><div class="card"><div class="card-header"><div class="card-title">异常数量变化趋势</div></div><div class="card-body chart-box">${lineChart(trend)}</div></div>
       <div class="card"><div class="card-header"><div class="card-title">异常项分布</div><button class="text-link" data-down-clues>查看明细</button></div><div class="card-body chart-box">${donut(dist)}</div></div></div>
       ${schoolOverviewCard}
@@ -489,10 +539,31 @@
         el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDashboardClues(); } });
       });
       document.querySelectorAll('[data-clue-row]').forEach((el) => el.addEventListener('click', () => navigate(`clues/${el.dataset.clueRow}`)));
+      document.querySelectorAll('[data-focus-clue]').forEach((el) => el.addEventListener('click', () => navigate(`clues/${el.dataset.focusClue}`)));
+      document.getElementById('view-action-queue')?.addEventListener('click', () => { applyDashboardClueContext(); navigate('clues'); });
+      document.getElementById('open-analysis-status')?.addEventListener('click', () => showAnalysisStatusGuide(tasks));
       document.querySelectorAll('[data-school-down]').forEach((el) => el.addEventListener('click', () => { ui.dashboardSchoolId=el.dataset.schoolDown; renderApp(); window.scrollTo({top:0,behavior:'smooth'}); }));
       document.getElementById('return-region-summary')?.addEventListener('click', () => { ui.dashboardSchoolId='all'; renderApp(); window.scrollTo({top:0,behavior:'smooth'}); });
       document.getElementById('view-all-clues').addEventListener('click', () => { applyDashboardClueContext(); navigate('clues'); });
     }};
+  }
+
+  function showAnalysisStatusGuide(tasks) {
+    const statusOrder = ['waiting', 'analyzing', 'partial', 'failed'];
+    const statusCopy = {
+      waiting: ['等待视频', '课堂视频尚未就绪，不生成课堂结果；视频到达后自动进入分析。'],
+      analyzing: ['分析中', '仅展示处理状态，不提前给出正常或异常结论。'],
+      partial: ['部分指标无结论', '已完成指标可展示；失败指标明确标记无结论，不计入正常数量。'],
+      failed: ['分析失败', '不生成课堂结论，需由内部任务监控处理，业务端不提供虚假正常结果。']
+    };
+    const representative = statusOrder.map((status) => tasks.find((item) => item.status === status)).filter(Boolean);
+    const body = `<div class="analysis-status-intro">这些状态用于解释“课堂总数”与“已分析课堂”之间的差异，不形成额外人工核查流程。</div><div class="analysis-status-list">${representative.map((item) => {
+      const ss = session(item.sessionId);
+      const copy = statusCopy[item.status];
+      return `<article><div><span class="tag ${item.status === 'failed' ? 'red' : item.status === 'partial' ? 'orange' : 'blue'}">${copy[0]}</span><strong>${fmtDate(ss.startAt)} · ${escapeHtml(klass(ss.classId)?.name || '课堂')}</strong></div><p>${copy[1]}</p>${item.failures?.length ? `<small>示例原因：${escapeHtml(item.failures.map((failure) => failure.reason).join('；'))}</small>` : ''}</article>`;
+    }).join('')}</div><div class="demo-guide-note"><strong>视频删除</strong><span>已完成的分析结果继续保留，播放器和必要证据明确显示不可用，不影响已保存的评价。</span></div><div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button></div>`;
+    showDrawer('分析状态说明', body);
+    portal.querySelector('[data-drawer-close-action]')?.addEventListener('click', closePortal);
   }
 
   function applyDashboardClueContext() {
@@ -684,8 +755,11 @@
     const visible = draft.anomalies.filter((item) => !item.deleted);
     const issueTypeIds = unique(visible.map((item) => item.typeId));
     const enabledTypes = db.anomalyTypes.filter((item) => db.rules[ss.schoolId]?.enabledTypes?.[item.id] !== false);
+    const sourceTask = task(source.taskId);
+    const unavailableReasons = Object.fromEntries((sourceTask?.failures || []).filter((item) => item.typeId && item.typeId !== 'all').map((item) => [item.typeId, item.reason]));
     const statusByType = Object.fromEntries(enabledTypes.map((item) => {
       if (issueTypeIds.includes(item.id)) return [item.id, { state: 'issue' }];
+      if (unavailableReasons[item.id]) return [item.id, { state: 'unavailable', reason: unavailableReasons[item.id] }];
       return [item.id, { state: 'normal' }];
     }));
     const totalMetrics = enabledTypes.length;
@@ -697,7 +771,8 @@
       enabledTypes,
       statusByType,
       totalMetrics,
-      normalMetrics: enabledTypes.filter((item) => statusByType[item.id].state === 'normal').length
+      normalMetrics: enabledTypes.filter((item) => statusByType[item.id].state === 'normal').length,
+      unavailableMetrics: enabledTypes.filter((item) => statusByType[item.id].state === 'unavailable').length
     };
   }
 
@@ -708,23 +783,24 @@
       const groupAnomalies = insight.visible.filter((item) => categoryMatches(type(item.typeId)?.category, groupId));
       const groupIssueTypes = unique(groupAnomalies.map((item) => item.typeId));
       const normalTypes = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'normal');
+      const unavailableTypes = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'unavailable');
       const normalCount = normalTypes.length;
       const isTeacher = groupId === 'teacher';
-      const state = groupAnomalies.length ? `${groupAnomalies.length} 项需关注` : '未发现异常';
+      const state = groupAnomalies.length ? `${groupAnomalies.length} 项需关注` : unavailableTypes.length ? `${unavailableTypes.length} 项无结论` : '未发现异常';
       const issueList = groupAnomalies.length
         ? `<div class="portrait-issue-list">${groupAnomalies.map((item) => `<button class="portrait-issue" data-seek-lesson="${draft.anomalies.indexOf(item)}"><span>${escapeHtml(type(item.typeId)?.label || '异常项')}</span><strong>${fmtClock(item.occurredSecond)}</strong></button>`).join('')}</div>`
         : '';
-      const statusCopy = `<div class="portrait-normal-copy">${isTeacher ? `已完成 ${groupTypes.length} 项教师行为分析，其中 ${normalCount} 项表现正常` : `已完成 ${groupTypes.length} 项学生行为分析，其中 ${normalCount} 项表现正常`}</div>`;
+      const statusCopy = `<div class="portrait-normal-copy">${isTeacher ? `已配置 ${groupTypes.length} 项教师行为指标，其中 ${normalCount} 项表现正常` : `已配置 ${groupTypes.length} 项学生行为指标，其中 ${normalCount} 项表现正常`}${unavailableTypes.length ? `，${unavailableTypes.length} 项因数据不足无结论` : ''}</div>`;
       const indicatorSummary = isTeacher
         ? `<div class="portrait-indicator-line"><span>正常指标</span><strong>${normalCount} 项</strong><small>${normalTypes.slice(0, 3).map((item) => escapeHtml(item.label)).join('、') || '—'}</small></div>`
         : insight.statusByType.student_participation?.state === 'normal'
           ? `<div class="portrait-participation"><div><span>学生参与度</span><strong>正常 · ${insight.participation} 分</strong><small>课堂整体保持活跃</small></div><button data-detail-action="participation" aria-label="查看学生参与度变化">${participationTrendChart(insight.participationValues)}<span>查看趋势 ›</span></button></div>`
           : '';
-      const stateClass = groupAnomalies.length ? 'has-issue' : 'is-normal';
+      const stateClass = groupAnomalies.length ? 'has-issue' : unavailableTypes.length ? 'is-unavailable' : 'is-normal';
       return `<article class="portrait-domain ${stateClass}"><div class="portrait-domain-head"><div><span>${escapeHtml(group.label)}</span><strong>${state}</strong></div><button class="text-link" data-detail-action="behavior-insight" data-behavior-group="${groupId}">${groupAnomalies.length ? '查看异常' : '查看分析'}</button></div>${issueList}${statusCopy}${indicatorSummary}</article>`;
     }).join('');
     return `<section class="indicator-overview behavior-portrait" aria-label="分析详情"><div class="indicator-overview-heading"><div><h2>分析详情</h2></div></div>
-      <div class="portrait-summary-row"><div><span>需关注</span><strong>${insight.visible.length}<small> 项异常</small></strong><em>${insight.visible.length ? '已命中规则，可回看证据' : '当前未发现异常'}</em></div><div><span>正常</span><strong>${insight.normalMetrics}<small> 项指标</small></strong><em>未触发异常规则</em></div></div>
+      <div class="portrait-summary-row${insight.unavailableMetrics ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${insight.visible.length}<small> 项异常</small></strong><em>${insight.visible.length ? '已命中规则，可回看证据' : '当前未发现异常'}</em></div><div><span>正常</span><strong>${insight.normalMetrics}<small> 项指标</small></strong><em>未触发异常规则</em></div>${insight.unavailableMetrics ? `<div><span>无结论</span><strong>${insight.unavailableMetrics}<small> 项指标</small></strong><em>数据不足，不计入正常</em></div>` : ''}</div>
       <div class="portrait-domain-grid">${groupDetails}</div>
     </section>`;
   }
@@ -851,7 +927,8 @@
       <div class="field wide"><label>通知对象（允许为空）</label><div class="recipient-box checkbox-row">${availablePeople.map((p)=>`<label><input type="checkbox" class="recipient-input" value="${p.id}" ${a.recipients.includes(p.id)?'checked':''}/> ${escapeHtml(p.name)} <span class="muted">${escapeHtml(p.role)}</span></label>`).join('')}</div></div>
     </div>`;
     const evidenceMeta = anomalyEvidenceMeta(a);
-    const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, ss.schoolId))}</div><dl class="anomaly-reading-grid"><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生时段</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>证据画面</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd></dl></div>`;
+    const anomalyType = type(a.typeId) || {};
+    const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, ss.schoolId))}</div><dl class="anomaly-reading-grid"><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生场景</dt><dd>${escapeHtml(anomalyType.applicableScene || anomalyScene(a.typeId))}</dd><dt>发生时段</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>证据画面</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd><dt>分析来源</dt><dd>${escapeHtml(anomalyType.signalSource || '课堂音视频')}</dd><dt>识别可信度</dt><dd>${a.source === 'manual' ? '人工新增，不适用' : `${Number(a.confidence) || 90}%（演示值）`}</dd><dt>判定理由</dt><dd>${escapeHtml(a.rationale || '观测结果达到学校当前判定定义')}</dd></dl><p class="anomaly-reading-footnote">识别可信度仅用于解释算法对本次识别结果的把握程度；是否采信仍应结合对应证据判断。</p></div>`;
     return `<div class="anomaly-form" data-anomaly-form="${index}">
       <div class="source-line"><div>${tag([a.source==='manual'?'人工新增':'AI分析',a.source==='manual'?'purple':'blue'])} ${a.repeat?tag(['重复问题','red']):''}</div>${isEditing?'<button class="text-link danger-text" id="delete-anomaly">删除异常项</button>':'<button class="text-link" id="edit-anomaly">调整异常信息</button>'}</div>
       ${isEditing?`${editFields}<div class="form-actions"><button class="btn primary" id="save-result-changes">保存修改</button></div>`:`${readOnlyDetail}<div class="result-summary"><span>${a.recipients.length?`通知对象：${escapeHtml(a.recipients.map((id)=>person(id)?.name).filter(Boolean).join('、'))}`:'未设置通知对象'}</span></div>`}
@@ -991,15 +1068,20 @@
     const rows = groupTypes.map((item) => {
         const occurrences = groupIssues.filter((issue) => issue.typeId === item.id);
         const isIssue = occurrences.length > 0;
+        const metricStatus = insight.statusByType[item.id] || { state: 'normal' };
+        const isUnavailable = metricStatus.state === 'unavailable';
         const meta = ruleCriteriaSummary(item, db.rules[ss.schoolId]);
         const result = isIssue
           ? `<div class="metric-insight-result issue-result"><span>发现 ${occurrences.length} 项</span>${occurrences.map((issue) => `<button data-portrait-seek="${draft.anomalies.indexOf(issue)}">${fmtClock(issue.occurredSecond)} 回看</button>`).join('')}</div>`
+          : isUnavailable
+            ? `<div class="metric-insight-result unavailable-result"><span>无结论</span><small>${escapeHtml(metricStatus.reason || item.unavailablePolicy || '分析所需数据不足')}</small></div>`
           : item.id === 'student_participation'
             ? `<div class="metric-insight-result normal-result participation-result"><span>正常 · ${insight.participation} 分</span><button data-detail-action="participation">查看变化 ›</button>${participationTrendChart(insight.participationValues)}</div>`
             : `<div class="metric-insight-result normal-result"><span>正常</span><small>未触发异常规则</small></div>`;
-        return `<article class="metric-insight-row ${isIssue ? 'has-issue' : 'is-normal'}"><div class="metric-insight-main"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(meta || '已按当前规则完成分析')}</span></div><div class="metric-insight-status">${isIssue ? tag(['需关注', 'orange']) : tag(['正常', 'green'])}</div>${result}</article>`;
+        return `<article class="metric-insight-row ${isIssue ? 'has-issue' : isUnavailable ? 'is-unavailable' : 'is-normal'}"><div class="metric-insight-main"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(meta || '已按当前规则完成分析')}</span><small>${escapeHtml(`${item.applicableScene || anomalyScene(item.id)} · ${item.signalSource || '课堂音视频'}`)}</small></div><div class="metric-insight-status">${isIssue ? tag(['需关注', 'orange']) : isUnavailable ? tag(['无结论', 'gray']) : tag(['正常', 'green'])}</div>${result}</article>`;
       }).join('');
-    const body = `<div class="behavior-insight-summary"><div><span>需关注</span><strong>${groupIssues.length} 项异常</strong></div><div><span>正常</span><strong>${normalCount} 项指标</strong></div></div><div class="metric-insight-list">${rows}</div><div class="drawer-actions"><button class="btn" id="open-group-management">查看异常项</button></div>`;
+    const unavailableCount = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'unavailable').length;
+    const body = `<div class="behavior-insight-summary${unavailableCount ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${groupIssues.length} 项异常</strong></div><div><span>正常</span><strong>${normalCount} 项指标</strong></div>${unavailableCount ? `<div><span>无结论</span><strong>${unavailableCount} 项指标</strong></div>` : ''}</div><div class="metric-insight-list">${rows}</div><div class="drawer-actions"><button class="btn" id="open-group-management">查看异常项</button></div>`;
     showDrawer(`${group.label}分析`, body);
     portal.querySelectorAll('[data-portrait-seek]').forEach((el) => el.addEventListener('click', () => {
       const index = Number(el.dataset.portraitSeek);
@@ -1126,7 +1208,8 @@
     if (!anomalyType) return;
     const values = ruleCriteriaValues(anomalyType, draft);
     const criteria = anomalyType.criteria || [];
-    const body = `<div class="rule-criteria-intro"><strong>${escapeHtml(anomalyType.label)}</strong><span>${escapeHtml(anomalyType.ruleLabel)}</span><small>每个观测条件独立判断，任一条件达到设定值即生成对应异常项。</small></div><div class="rule-criteria-editor-list">${criteria.map((criterion) => `<div class="rule-criterion-card"><div class="rule-criterion-copy"><strong>${escapeHtml(criterion.label)}</strong><span>${escapeHtml(criterion.help)}</span></div><div class="rule-criterion-input"><span>${escapeHtml(criterion.operatorLabel)}</span><input class="control rule-criterion-value" type="number" data-criterion="${criterion.id}" value="${values[criterion.id]}" min="${criterion.min ?? 0}" max="${criterion.max ?? 9999}" step="${criterion.step ?? 1}" ${readOnly ? 'disabled' : ''}/><em>${escapeHtml(criterion.unit)}</em></div></div>`).join('')}</div>${readOnly ? '<div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button></div>' : '<div class="drawer-actions"><button class="btn" data-drawer-close-action>取消</button><button class="btn primary" id="save-rule-criteria">保存设置</button></div>'}`;
+    const profile = `<section class="metric-profile-card"><h3>指标定义与适用前提</h3><dl><dt>适用场景</dt><dd>${escapeHtml(anomalyType.applicableScene || anomalyScene(anomalyType.id))}</dd><dt>分析来源</dt><dd>${escapeHtml(anomalyType.signalSource || '课堂音视频')}</dd><dt>观测窗口</dt><dd>${escapeHtml(anomalyType.observationWindow || '整节课堂')}</dd><dt>聚合方式</dt><dd>${escapeHtml(anomalyType.aggregation || '按学校规则汇总')}</dd><dt>无结论条件</dt><dd>${escapeHtml(anomalyType.unavailablePolicy || '分析所需数据不足时不输出结论')}</dd><dt>证据要求</dt><dd>${escapeHtml(anomalyType.evidenceRequirement || '保留必要时间点和来源片段')}</dd><dt>可信度规则</dt><dd>${escapeHtml(anomalyType.confidencePolicy || '达到算法门槛后再与规则比较')}</dd></dl>${anomalyType.governanceNote ? `<div class="metric-governance-note"><strong>使用注意</strong><span>${escapeHtml(anomalyType.governanceNote)}</span></div>` : ''}</section>`;
+    const body = `<div class="rule-criteria-intro"><strong>${escapeHtml(anomalyType.label)}</strong><span>${escapeHtml(anomalyType.ruleLabel)}</span><small>每个观测条件独立判断，任一条件达到设定值即生成对应异常项。</small></div>${profile}<div class="rule-criteria-editor-list">${criteria.map((criterion) => `<div class="rule-criterion-card"><div class="rule-criterion-copy"><strong>${escapeHtml(criterion.label)}</strong><span>${escapeHtml(criterion.help)}</span></div><div class="rule-criterion-input"><span>${escapeHtml(criterion.operatorLabel)}</span><input class="control rule-criterion-value" type="number" data-criterion="${criterion.id}" value="${values[criterion.id]}" min="${criterion.min ?? 0}" max="${criterion.max ?? 9999}" step="${criterion.step ?? 1}" ${readOnly ? 'disabled' : ''}/><em>${escapeHtml(criterion.unit)}</em></div></div>`).join('')}</div>${readOnly ? '<div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button></div>' : '<div class="drawer-actions"><button class="btn" data-drawer-close-action>取消</button><button class="btn primary" id="save-rule-criteria">保存设置</button></div>'}`;
     showDrawer(`${anomalyType.label}判定设置`, body);
     portal.querySelectorAll('[data-drawer-close-action]').forEach((el) => el.addEventListener('click', closePortal));
     if (readOnly) return;
@@ -1158,6 +1241,7 @@
     const notificationRow=(kind,title,desc)=>{const recipients=draft[kind]||[]; return `<div class="notify-config-row"><div><div class="rule-name">${title}</div><div class="rule-desc">${desc}</div></div><div class="notify-recipient-list">${recipients.length?recipients.map((value)=>tag([defaultRecipientLabel(value),'blue'])).join(''):'<span class="muted">未设置默认接收人</span>'}</div>${readOnly?'':`<button class="btn small" data-edit-notify="${kind}">${recipients.length?'编辑':'设置'}</button>`}</div>`;};
     const html=`<section class="page-body"><div class="page-header"><div><div class="rule-title-row"><h1 class="page-title">巡课规则</h1>${readOnly?'':`<span id="rule-dirty-status" class="rule-dirty-status${hasChanges?' is-dirty':''}" aria-live="polite">${hasChanges?'有未保存修改':'当前规则已保存'}</span>`}</div></div>${ui.role==='region'?'<div class="page-actions"><span class="tag orange">区域管理员只读</span></div>':''}</div>
       ${ui.role==='region'?`<div class="filter-bar"><select class="control" id="rule-school">${db.schools.map((s)=>option(s.id,s.name,viewSchoolId)).join('')}</select><div class="read-only-banner" style="margin:0">区域管理员可以查看学校规则，但不能编辑或下发统一规则。</div></div>`:''}
+      <div class="rule-version-panel"><div><span>当前学校</span><strong>${escapeHtml(school(viewSchoolId)?.name || '—')}</strong></div><div><span>生效版本</span><strong>${escapeHtml(draft.version || '—')}</strong></div><div><span>最近生效</span><strong>${fmtDate(draft.effectiveFrom || draft.updatedAt)}</strong></div><div><span>操作人</span><strong>${escapeHtml(draft.updatedBy || '系统管理员')}</strong></div><p>本版本仅适用于生效后新开始的课堂；已经开始的课堂继续使用任务创建时锁定的规则快照。</p></div>
       <div class="rule-layout${readOnly?' read-only':''}"><nav class="rule-nav"><a data-scroll="rule-teacher">教师课堂行为</a><a data-scroll="rule-student">学生行为</a><a data-scroll="rule-repeat">重复问题</a><a data-scroll="rule-notify">默认通知</a></nav><div>
         ${groups.map((group)=>ruleTypeSection(group,draft,readOnly)).join('')}
         <section class="card rule-section" id="rule-repeat"><div class="card-header"><div><div class="card-title">教师重复问题</div><div class="muted">按指标分别配置；学生问题不参与重复判断</div></div></div><div class="card-body">${db.anomalyTypes.filter((t)=>t.category==='teacher').map((t)=>{const v=draft.repeat[t.id]||{days:30,times:3};return `<div class="rule-repeat-row"><div class="rule-name">${escapeHtml(t.label)}</div><div class="repeat-config"><label><input class="control rule-repeat-days" data-type="${t.id}" type="number" min="1" value="${v.days}" ${readOnly?'disabled':''}/><span>天内</span></label><label><input class="control rule-repeat-times" data-type="${t.id}" type="number" min="2" value="${v.times}" ${readOnly?'disabled':''}/><span>次</span></label></div></div>`;}).join('')}</div></section>
@@ -1170,7 +1254,7 @@
 
   function ruleTypeSection(group,draft,readOnly) {
     const groupMeta=db.categoryGroups[group];
-    const ruleRow=(t)=>{const enabled=Boolean(draft.enabledTypes[t.id]);return `<div class="rule-row${enabled?'':' is-disabled'}"><div><div class="rule-name">${escapeHtml(t.label)}</div><div class="rule-desc">${escapeHtml(t.ruleLabel||'达到判定条件后生成异常项')}</div></div><div class="rule-definition-summary"><span>当前定义</span><strong>${escapeHtml(ruleCriteriaSummary(t,draft,2))}</strong></div><label><input class="switch rule-type" type="checkbox" value="${t.id}" ${enabled?'checked':''} ${readOnly?'disabled':''}/> ${enabled?'已启用':'已停用'}</label><button class="btn small rule-setting-button" data-edit-rule-criteria="${t.id}">${readOnly?'查看定义':'设置'}</button></div>`;};
+    const ruleRow=(t)=>{const enabled=Boolean(draft.enabledTypes[t.id]);return `<div class="rule-row${enabled?'':' is-disabled'}"><div><div class="rule-name">${escapeHtml(t.label)}</div><div class="rule-desc">${escapeHtml(t.ruleLabel||'达到判定条件后生成异常项')}</div><small class="rule-profile-line">${escapeHtml(`${t.applicableScene || anomalyScene(t.id)} · ${t.signalSource || '课堂音视频'}`)}</small></div><div class="rule-definition-summary"><span>当前定义</span><strong>${escapeHtml(ruleCriteriaSummary(t,draft))}</strong></div><label><input class="switch rule-type" type="checkbox" value="${t.id}" ${enabled?'checked':''} ${readOnly?'disabled':''}/> ${enabled?'已启用':'已停用'}</label><button class="btn small rule-setting-button" data-edit-rule-criteria="${t.id}">${readOnly?'查看定义':'设置'}</button></div>`;};
     const sceneGroups = `<div class="rule-scene-group">${groupMeta.categoryIds.flatMap((category) => db.anomalyTypes.filter((t) => t.category === category)).map(ruleRow).join('')}</div>`;
     return `<section class="card rule-section" id="rule-${group}"><div class="card-header"><div><div class="card-title">${escapeHtml(groupMeta.label)}</div></div></div><div class="card-body">${sceneGroups}</div></section>`;
   }
@@ -1187,7 +1271,20 @@
     document.querySelectorAll('[data-edit-notify]').forEach((el)=>el.addEventListener('click',()=>showDefaultNotifyEditor(el.dataset.editNotify, schoolId, draft)));
     document.getElementById('allow-full-video').addEventListener('change',(e)=>{draft.allowFullVideo=e.target.checked;updateDirty();});
     document.getElementById('discard-rules').addEventListener('click',()=>{ui.ruleDrafts[schoolId]=clone(db.rules[schoolId]);renderApp();toast('已恢复为当前生效规则');});
-    document.getElementById('save-rules').addEventListener('click',()=>{if(JSON.stringify(draft)===JSON.stringify(db.rules[schoolId])){toast('当前没有待保存修改');return;}showModal({title:'保存巡课规则',body:'<div class="warning-box">规则保存后，仅对之后新开始的课堂生效；进行中的课堂仍使用开始时的旧规则。是否保存？</div>',confirmText:'确认保存',onConfirm:()=>{const match=String(draft.version).match(/\d+/);const currentNo=match?Number(match[0]):1;draft.version=`R${currentNo + 1}.0`;draft.updatedAt=seed.DEMO_NOW;db.rules[schoolId]=clone(draft);saveDB();toast('巡课规则已保存');renderApp();}});});
+    document.getElementById('save-rules').addEventListener('click',()=>{if(JSON.stringify(draft)===JSON.stringify(db.rules[schoolId])){toast('当前没有待保存修改');return;}const summary=describeRuleChanges(db.rules[schoolId],draft);showModal({title:'保存巡课规则',body:`<div class="rule-save-summary"><strong>本次变更</strong><ul>${summary.map((item)=>`<li>${escapeHtml(item)}</li>`).join('')}</ul></div><div class="warning-box">规则保存后，仅对之后新开始的课堂生效；进行中的课堂仍使用开始时的旧规则。</div>`,confirmText:'确认保存并生效',onConfirm:()=>{const match=String(draft.version).match(/\d+/);const currentNo=match?Number(match[0]):1;draft.version=`R${currentNo + 1}.0`;draft.updatedAt=seed.DEMO_NOW;draft.effectiveFrom=seed.DEMO_NOW;draft.updatedBy=ui.role==='school'?'林静':'宋倩';db.rules[schoolId]=clone(draft);saveDB();toast(`巡课规则 ${draft.version} 已生效`);renderApp();}});});
+  }
+
+  function describeRuleChanges(current, draft) {
+    const items = [];
+    const toggled = db.anomalyTypes.filter((item) => Boolean(current.enabledTypes[item.id]) !== Boolean(draft.enabledTypes[item.id])).length;
+    const criteriaChanged = db.anomalyTypes.filter((item) => JSON.stringify(current.criteria?.[item.id] || {}) !== JSON.stringify(draft.criteria?.[item.id] || {})).length;
+    const repeatChanged = db.anomalyTypes.filter((item) => item.category === 'teacher' && JSON.stringify(current.repeat?.[item.id] || {}) !== JSON.stringify(draft.repeat?.[item.id] || {})).length;
+    if (toggled) items.push(`调整 ${toggled} 项指标的启停状态`);
+    if (criteriaChanged) items.push(`修改 ${criteriaChanged} 项指标的判定定义`);
+    if (repeatChanged) items.push(`修改 ${repeatChanged} 项教师重复问题规则`);
+    if (JSON.stringify(current.notifyTeacher || []) !== JSON.stringify(draft.notifyTeacher || []) || JSON.stringify(current.notifyStudent || []) !== JSON.stringify(draft.notifyStudent || [])) items.push('更新默认通知角色');
+    if (current.allowFullVideo !== draft.allowFullVideo) items.push(`整节课视频权限改为${draft.allowFullVideo ? '允许查看' : '不允许查看'}`);
+    return items.length ? items : ['更新巡课规则配置'];
   }
 
   function updateRuleDirtyStatus(schoolId,draft) {
@@ -1239,12 +1336,12 @@
     notice.read=true; saveDB();
     const ss=session(notice.sessionId); const c=clue(notice.clueId); const scRule=db.rules[notice.schoolId];
     const beforeItems=(notice.beforeSnapshot||notice.before.map((aid)=>resolveAnomaly(c,aid)).filter(Boolean)); const afterItems=(notice.afterSnapshot||notice.after.map((aid)=>resolveAnomaly(c,aid)).filter(Boolean));
-    const issueList=(items)=>items.length?items.map((a)=>`<div class="issue-card"><div class="issue-head"><span class="issue-title">${escapeHtml(type(a.typeId)?.label||'已撤销问题')}</span><span>${fmtClock(a.occurredSecond)}</span></div><div class="muted">问题对象：${a.teacherId?escapeHtml(person(a.teacherId)?.name):a.classId?escapeHtml(klass(a.classId)?.name):escapeHtml(a.position||'画面位置')}</div>${ss.videoDeleted?'<div class="muted" style="margin-top:7px">原视频已删除，对应必要证据不可查看</div>':a.evidence?.length?'<div class="evidence-preview"></div>':'<div class="muted" style="margin-top:7px">未保留必要证据</div>'}</div>`).join(''):'<div class="empty-state" style="min-height:150px"><div>无保留问题</div></div>';
+    const issueList=(items)=>items.length?items.map((a)=>`<div class="issue-card"><div class="issue-head"><span class="issue-title">${escapeHtml(type(a.typeId)?.label||'已撤销问题')}</span><span>${fmtClock(a.occurredSecond)}</span></div><div class="muted">问题对象：${a.teacherId?escapeHtml(person(a.teacherId)?.name):a.classId?escapeHtml(klass(a.classId)?.name):escapeHtml(a.position||'画面位置')}</div>${ss.videoDeleted?'<div class="muted" style="margin-top:7px">原视频已删除，对应必要证据不可查看</div>':a.evidence?.length?`<button class="evidence-preview" data-notice-evidence="${escapeHtml(a.id)}">▶ 查看必要证据</button>`:'<div class="muted" style="margin-top:7px">未保留必要证据</div>'}</div>`).join(''):'<div class="empty-state" style="min-height:150px"><div>无保留问题</div></div>';
     const body=notice.kind==='correction'?`<div class="notice-compare"><div class="notice-side before"><strong>修改前</strong><div style="margin-top:10px">${issueList(beforeItems)}</div></div><div class="notice-side after"><strong>修改后</strong><div style="margin-top:10px">${issueList(afterItems)}</div></div></div>`:notice.kind==='withdraw'?`<div class="warning-box">与您相关的课堂巡课问题已撤回。原通知内容仅用于说明变化，不再作为当前有效问题。</div><div style="margin-top:14px">${issueList(beforeItems)}</div>`:issueList(afterItems);
     const html=`<section class="page-body"><div class="detail-top"><button class="back-link" id="back-messages">← 返回消息中心</button><span class="muted">/</span>${tag(noticeMeta[notice.kind])}</div><div class="page-header"><div><h1 class="page-title">${escapeHtml(notice.title)}</h1><div class="page-subtitle">发送给 ${escapeHtml(person(notice.recipientId)?.name||'接收人')} · ${fmtDate(notice.sentAt)}</div></div></div>
       <div class="card"><div class="card-body"><dl class="detail-list"><dt>学校</dt><dd>${escapeHtml(school(notice.schoolId).name)}</dd><dt>课堂时间</dt><dd>${fmtDate(ss.startAt)}</dd><dt>教室</dt><dd>${escapeHtml(room(ss.roomId).name)}</dd><dt>课程</dt><dd>${escapeHtml(ss.subject)}</dd><dt>教师 / 班级</dt><dd>${escapeHtml(person(ss.teacherId).name)} / ${escapeHtml(klass(ss.classId).name)}</dd></dl><hr class="side-divider"/><h3 style="color:var(--title)">${notice.kind==='correction'?'问题变更内容':notice.kind==='withdraw'?'已撤回内容':'与您相关的问题'}</h3>${body}${ss.videoDeleted?'<div class="read-only-banner">原视频及对应必要证据已删除，无法播放；通知和问题记录继续保留。</div>':scRule.allowFullVideo?'<button class="btn" id="open-notice-full-video" style="margin-top:8px">查看整节课视频</button>':'<div class="read-only-banner" style="margin-top:12px">学校未授权查看整节课视频，您仍可查看管理员保留的必要证据。</div>'}</div></div>
     </section>`;
-    return {html,setup:()=>{document.getElementById('back-messages').addEventListener('click',()=>navigate('messages'));document.getElementById('open-notice-full-video')?.addEventListener('click',()=>showDrawer('课堂视频',`<div class="full-video-drawer"><video src="./assets/videos/classroom-teacher.mp4" controls playsinline preload="metadata"></video><div class="muted">${escapeHtml(room(ss.roomId).name)} · ${fmtDate(ss.startAt)} · ${escapeHtml(ss.subject)}</div></div>`));}};
+    return {html,setup:()=>{document.getElementById('back-messages').addEventListener('click',()=>navigate('messages'));document.getElementById('open-notice-full-video')?.addEventListener('click',()=>showDrawer('课堂视频',`<div class="full-video-drawer"><video src="./assets/videos/classroom-teacher.mp4" controls playsinline preload="metadata"></video><div class="muted">${escapeHtml(room(ss.roomId).name)} · ${fmtDate(ss.startAt)} · ${escapeHtml(ss.subject)}</div></div>`));document.querySelectorAll('[data-notice-evidence]').forEach((el)=>el.addEventListener('click',()=>{const target=[...beforeItems,...afterItems].find((item)=>item.id===el.dataset.noticeEvidence);const meta=target?anomalyEvidenceMeta(target):{camera:'课堂画面',range:'—'};showDrawer('必要证据',`<div class="full-video-drawer"><video src="./assets/videos/classroom-teacher.mp4" controls playsinline preload="metadata"></video><div class="evidence-context"><strong>${escapeHtml(type(target?.typeId)?.label||'课堂问题')}</strong><span>${escapeHtml(meta.camera)} · ${escapeHtml(meta.range)}</span><small>${target?.confidence?`识别可信度 ${target.confidence}%（演示值） · `:''}${escapeHtml(target?.rationale||'观测结果达到学校当前判定定义')}</small></div></div>`);}));}};
   }
 
   function qualityPage() {
@@ -1256,7 +1353,7 @@
   }
 
   function notFoundPage(message) { return {html:`<section class="page-body"><div class="card empty-state"><div class="empty-icon">?</div><div>${escapeHtml(message)}</div><button class="btn primary" id="go-home">返回巡课看板</button></div></section>`,setup:()=>{document.getElementById('go-home').addEventListener('click',()=>navigate('dashboard'));}}; }
-  function noPermissionPage() { return {html:'<section class="page-body"><div class="card empty-state"><div class="empty-icon">⊘</div><div>暂无权限查看该内容</div></div></section>',setup:()=>{}}; }
+  function noPermissionPage() { return {html:'<section class="page-body"><div class="card empty-state"><div class="empty-icon">⊘</div><div>暂无权限查看该内容</div><span class="muted">请切换到有权限的学校范围，或返回分析结果列表。</span><button class="btn primary" id="permission-back">返回分析结果</button></div></section>',setup:()=>{document.getElementById('permission-back')?.addEventListener('click',()=>navigate('clues'));}}; }
 
   function renderApp() {
     portal.innerHTML='';

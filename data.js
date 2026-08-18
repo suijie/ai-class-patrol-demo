@@ -1,5 +1,6 @@
 (function () {
-  const DEMO_NOW = '2026-08-06T10:00:00+08:00';
+  const DEMO_NOW = '2026-08-18T11:30:00+08:00';
+  const DEMO_VERSION = 'V0.54';
   const anomalyTypes = [
     { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定', defaultSeverity: 'important', criteria: [
       { id: 'late_minutes', label: '迟到', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表上课时间仍未到岗' },
@@ -64,6 +65,26 @@
       { id: 'continuous_seconds', label: '行为持续', operatorLabel: '超过', defaultValue: 20, unit: '秒', min: 5, max: 600, step: 5, help: '追逐或打闹行为连续持续的时长' }
     ] }
   ];
+
+  const metricProfiles = {
+    teacher_absent: { applicableScene: '课前、课堂与下课边界', signalSource: '课表 + 教师全景', observationWindow: '上课前 10 分钟至下课后 10 分钟', aggregation: '按单节课堂分别计算迟到和早退', unavailablePolicy: '课表缺失或教师画面不可用时不输出结论', evidenceRequirement: '保留教师到岗或离岗时间点及对应画面', confidencePolicy: '人员识别与课表时间均有效时才生成异常' },
+    teacher_phone: { applicableScene: '课堂中', signalSource: '教师全景', observationWindow: '整节课堂', aggregation: '同类行为按独立事件计次', unavailablePolicy: '教师画面遮挡或清晰度不足时不输出结论', evidenceRequirement: '每次事件保留前后视频片段', confidencePolicy: '达到事件识别门槛后再与次数规则比较', governanceNote: '抽烟为敏感行为，仅在学校制度允许且模型能力通过专项验收后启用。' },
+    teacher_misconduct: { applicableScene: '课堂中', signalSource: '教师全景 + 课堂音频', observationWindow: '整节课堂', aggregation: '体罚与疑似语言暴力分别计次', unavailablePolicy: '音频缺失时不判断语言类观测点', evidenceRequirement: '保留对应画面、音频时间点与文本片段', confidencePolicy: '仅作为疑似线索，不替代人工事实认定', governanceNote: '属于高敏感指标，通知文案必须使用“疑似”，并限制证据访问范围。' },
+    teacher_schedule: { applicableScene: '课前与课后课间', signalSource: '课表 + 教师全景 + 课堂音频', observationWindow: '上课前 10 分钟与下课后 10 分钟', aggregation: '提前到位与拖堂分别计算时长', unavailablePolicy: '课表或连续视频缺失时不输出结论', evidenceRequirement: '保留课堂边界前后的时间片段', confidencePolicy: '以课表时间为唯一边界基准' },
+    teacher_attire: { applicableScene: '课堂中', signalSource: '教师全景', observationWindow: '教师可见且站立的有效画面', aggregation: '同一课堂同类着装只计一次', unavailablePolicy: '下半身不可见或遮挡时不输出结论', evidenceRequirement: '保留可辨识着装的最短必要片段', confidencePolicy: '画面质量和人体关键点均满足门槛才判断', governanceNote: '是否启用由学校制度和合规评审决定，默认不应作为教师能力评价。' },
+    teacher_sitting: { applicableScene: '课堂中', signalSource: '教师全景', observationWindow: '整节课堂有效教学时段', aggregation: '累计就坐与累计站立分别汇总', unavailablePolicy: '教师持续离开画面时标记无结论', evidenceRequirement: '保留状态变化时间点并支持整段回看', confidencePolicy: '有效跟踪时长达到课堂时长 80% 才输出' },
+    teacher_mandarin: { applicableScene: '课堂中', signalSource: '课堂音频', observationWindow: '有效教师语音片段', aggregation: '计算非普通话占比和最长连续时长', unavailablePolicy: '无音频、噪声过大或教师声纹不可分离时不输出结论', evidenceRequirement: '保留音频时间点与脱敏文本片段', confidencePolicy: '有效语音时长达到课堂时长 60% 才输出', governanceNote: '方言课程、双语课程及特殊教学场景应支持停用或排除。' },
+    student_discipline: { applicableScene: '课堂中', signalSource: '学生全景', observationWindow: '整节课堂', aggregation: '交头接耳计次，随意走动按连续时长', unavailablePolicy: '学生画面覆盖不足时不输出结论', evidenceRequirement: '保留事件位置、时间与前后片段', confidencePolicy: '人数和行为轨迹同时满足门槛才生成线索' },
+    class_count: { applicableScene: '课堂中及课堂边界', signalSource: '学生全景 + 班级应到名单', observationWindow: '开课后 5 分钟、课堂中与下课前 5 分钟', aggregation: '人数偏差、迟到人数和早退人数分别统计', unavailablePolicy: '应到人数缺失或画面无法覆盖全班时不输出结论', evidenceRequirement: '保留人数统计时点与出入画面片段', confidencePolicy: '稳定人数统计连续满足 30 秒后输出' },
+    student_participation: { applicableScene: '课堂中', signalSource: '学生全景 + 课堂事件', observationWindow: '按 5 分钟窗口连续计算', aggregation: '综合举手、发言、起立和书写事件形成趋势', unavailablePolicy: '有效学生覆盖低于 70% 时标记无结论', evidenceRequirement: '保留低参与窗口及趋势数据', confidencePolicy: '仅表达课堂状态，不作为学生或教师能力评分' },
+    student_phone: { applicableScene: '课堂中', signalSource: '学生全景', observationWindow: '整节课堂', aggregation: '按对象合并相邻事件并计算单次时长', unavailablePolicy: '手部区域或终端不可辨识时不输出结论', evidenceRequirement: '保留疑似使用终端的局部区域和前后片段', confidencePolicy: '物体识别与动作持续时长同时满足门槛' },
+    student_desk: { applicableScene: '课堂中', signalSource: '学生全景', observationWindow: '整节课堂', aggregation: '按人数与连续趴桌时长分别判断', unavailablePolicy: '座位区域遮挡或学生不可见时不输出结论', evidenceRequirement: '保留连续状态的起止时间与画面', confidencePolicy: '连续跟踪不中断才累计时长' },
+    student_eating: { applicableScene: '课堂中', signalSource: '学生全景', observationWindow: '整节课堂', aggregation: '按对象和独立行为事件计数', unavailablePolicy: '手部与口部区域不可辨识时不输出结论', evidenceRequirement: '保留事件时间、位置与前后片段', confidencePolicy: '动作与物体识别同时满足门槛' },
+    fighting: { applicableScene: '课前与课后课间', signalSource: '学生全景', observationWindow: '课前 10 分钟与课后 10 分钟', aggregation: '按参与人数和连续行为时长判断', unavailablePolicy: '课间视频缺失或人群严重遮挡时不输出结论', evidenceRequirement: '保留事件全程、参与区域和前后片段', confidencePolicy: '仅生成“疑似打斗”线索，不自动作事实定性', governanceNote: '应提供快速回看，不自动产生纪律处分结论。' },
+    chasing: { applicableScene: '课前与课后课间', signalSource: '学生全景', observationWindow: '课前 10 分钟与课后 10 分钟', aggregation: '按参与人数和连续移动轨迹判断', unavailablePolicy: '课间视频缺失或轨迹不可连续跟踪时不输出结论', evidenceRequirement: '保留完整追逐轨迹和前后片段', confidencePolicy: '排除正常进出教室后再生成线索' }
+  };
+
+  anomalyTypes.forEach((item) => Object.assign(item, metricProfiles[item.id] || {}));
 
   const categories = {
     teacher: '教师课堂行为',
@@ -266,6 +287,8 @@
           recipients,
           submitted: result !== 'unprocessed',
           repeat: type.id === 'teacher_sitting' && session.teacherId === 'p11',
+          confidence: 88 + ((index + anomalyIndex) % 8),
+          rationale: `${type.criteria?.[0]?.label || type.label}观测结果达到学校当前判定定义`,
           deleted: result === 'deleted'
         };
       });
@@ -314,6 +337,8 @@
       rules[school.id] = {
         version: `R${idx + 2}.0`,
         updatedAt: day(4 + idx, 15, 0),
+        effectiveFrom: day(4 + idx, 15, 0),
+        updatedBy: idx === 0 ? '林静' : idx === 1 ? '方立新' : '郑欣',
         enabledRooms: schoolRooms.map((r) => r.id),
         enabledTypes: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.defaultEnabled !== false; return acc; }, {}),
         thresholds: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.criteria?.[0]?.defaultValue ?? null; return acc; }, {}),
@@ -326,8 +351,8 @@
           acc[t.id] = { days: 30, times: 3 };
           return acc;
         }, {}),
-        notifyTeacher: [],
-        notifyStudent: [],
+        notifyTeacher: ['role:teacher'],
+        notifyStudent: ['role:homeroom'],
         allowFullVideo: idx === 0
       };
     });
@@ -391,7 +416,8 @@
     }
 
     return {
-      schemaVersion: 16,
+      schemaVersion: 17,
+      demoVersion: DEMO_VERSION,
       generatedAt: DEMO_NOW,
       region,
       schools,
@@ -416,6 +442,7 @@
 
   window.AIPCDemoData = {
     DEMO_NOW,
+    DEMO_VERSION,
     anomalyTypes,
     categories,
     categoryGroups,
