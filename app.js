@@ -39,7 +39,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.schemaVersion === 14) return parsed;
+        if (parsed && parsed.schemaVersion === 16) return parsed;
       }
     } catch (error) {
       console.warn('无法读取本地演示数据', error);
@@ -75,6 +75,26 @@
   function categoryGroup(category) { return db.categoryGroups[categoryGroupId(category)]; }
   function categoryLabel(category) { return categoryGroup(category)?.label || db.categories[category] || category; }
   function categoryScene(category) { return db.categoryScenes[category] || ''; }
+  function anomalyScene(typeId) {
+    const anomalyType = type(typeId);
+    return anomalyType?.scene === 'break' || anomalyType?.category === 'student_break' ? '课间' : '课堂';
+  }
+  function lessonSceneBounds(ss) {
+    const durationSeconds = Math.max(1, ss.duration * 60);
+    const breakSeconds = Math.min(600, Math.floor(durationSeconds / 3));
+    return { durationSeconds, classStart: breakSeconds, classEnd: Math.max(breakSeconds, durationSeconds - breakSeconds) };
+  }
+  function occurrenceMatchesScene(typeId, occurredSecond, ss) {
+    const { durationSeconds, classStart, classEnd } = lessonSceneBounds(ss);
+    const second = Number(occurredSecond);
+    if (!Number.isFinite(second) || second < 0 || second > durationSeconds) return false;
+    const isBreak = second < classStart || second >= classEnd;
+    return anomalyScene(typeId) === '课间' ? isBreak : !isBreak;
+  }
+  function defaultOccurrenceSecond(typeId, ss) {
+    const { durationSeconds, classStart, classEnd } = lessonSceneBounds(ss);
+    return anomalyScene(typeId) === '课间' ? Math.min(300, Math.max(60, classStart - 60)) : Math.min(classEnd - 60, classStart + 120, durationSeconds - 60);
+  }
   function categoryMatches(category, selected) { return selected === 'all' || (db.categoryGroups[selected]?.categoryIds || [selected]).includes(category); }
   function categoryFilterOptions(selected) { return Object.entries(db.categoryGroups).map(([id, meta]) => option(id, meta.label, selected)).join(''); }
   function escapeHtml(value) {
@@ -186,7 +206,6 @@
     waiting: ['等待视频', 'gray'], analyzing: ['分析中', 'blue'], complete_none: ['无异常', 'green'],
     complete_issue: ['有疑似线索', 'orange'], partial: ['部分失败', 'orange'], failed: ['分析失败', 'red']
   };
-  const severityMeta = { normal: ['一般', 'gray'], important: ['重要', 'orange'], serious: ['严重', 'red'] };
   const resultMeta = {
     unprocessed: ['未处理', 'gray'], formal: ['正式问题', 'red'], false: ['误报', 'green'],
     uncertain: ['暂不确定', 'orange'], deleted: ['人工删除', 'gray']
@@ -715,7 +734,7 @@
     const markers = insight.visible.map((item) => {
       const index = draft.anomalies.indexOf(item);
       const left = Math.max(2, Math.min(98, (item.occurredSecond / Math.max(1, ss.duration * 60)) * 100));
-      const scene = type(item.typeId)?.category === 'student_break' ? '课间' : '课堂';
+      const scene = anomalyScene(item.typeId);
       return `<button class="portrait-event-marker${scene === '课间' ? ' is-break' : ''}" style="left:${left}%" data-seek-lesson="${index}" aria-label="回看${escapeHtml(type(item.typeId)?.label || '异常项')} ${fmtClock(item.occurredSecond)}，发生于${scene}"><i></i><span>${fmtClock(item.occurredSecond)} · ${scene} · ${escapeHtml(type(item.typeId)?.label || '异常项')}</span></button>`;
     }).join('');
     const durationSeconds = Math.max(1, ss.duration * 60);
@@ -752,9 +771,19 @@
   function anomalyRuleLabel(anomaly, schoolId) {
     const anomalyType = type(anomaly.typeId);
     if (!anomalyType) return '按学校巡课规则识别';
-    const threshold = db.rules[schoolId]?.thresholds?.[anomaly.typeId];
-    const thresholdText = threshold != null && anomalyType.unit ? `当前阈值 ${threshold}${anomalyType.unit}` : '';
-    return [anomalyType.ruleLabel, thresholdText].filter(Boolean).join(' · ');
+    return `判定定义：${ruleCriteriaSummary(anomalyType, db.rules[schoolId])}`;
+  }
+
+  function ruleCriteriaValues(anomalyType, rule) {
+    const saved = rule?.criteria?.[anomalyType.id] || {};
+    return Object.fromEntries((anomalyType.criteria || []).map((criterion) => [criterion.id, saved[criterion.id] ?? criterion.defaultValue]));
+  }
+
+  function ruleCriteriaSummary(anomalyType, rule, limit) {
+    const values = ruleCriteriaValues(anomalyType, rule);
+    const parts = (anomalyType.criteria || []).map((criterion) => `${criterion.label}${criterion.operatorLabel}${values[criterion.id]}${criterion.unit}`);
+    if (limit && parts.length > limit) return `${parts.slice(0, limit).join('；')}；另 ${parts.length - limit} 项`;
+    return parts.join('；') || '按学校当前判定规则执行';
   }
 
   function clueDetailPage(id) {
@@ -819,14 +848,13 @@
       <div class="field"><label>问题类型</label><input class="control" value="${escapeHtml(categoryLabel(a.category))}" disabled /></div>
       <div class="field"><label>发生时间 *</label><input class="control anomaly-input" data-field="occurredSecond" type="number" min="0" max="${ss.duration*60}" value="${a.occurredSecond}" /></div>
       ${isTeacher?`<div class="field"><label>教师归属 *</label><select class="control anomaly-input" data-field="teacherId">${schoolTeachers.map((p)=>option(p.id,`${p.name}（${p.role}）`,a.teacherId)).join('')}</select></div><div class="field"><label>问题位置</label><input class="control anomaly-input" data-field="position" value="${escapeHtml(a.position||'')}" /></div>`:`<div class="field"><label>班级归属 *</label><select class="control anomaly-input" data-field="classId">${schoolClasses.map((c)=>option(c.id,c.name,a.classId)).join('')}</select></div><div class="field"><label>问题对象</label><select class="control anomaly-input" data-field="objectKind">${option('class','整个班级',a.objectKind)}${option('position','视频画面中的位置',a.objectKind)}</select></div><div class="field wide"><label>画面位置</label><input class="control anomaly-input" data-field="position" value="${escapeHtml(a.position||'')}" placeholder="仅标记视频位置，不填写座位号" /></div>`}
-      <div class="field"><label>严重程度</label><select class="control anomaly-input" data-field="severity">${Object.entries(db.severityLabels).map(([id,label])=>option(id,label,a.severity)).join('')}</select></div>
       <div class="field wide"><label>通知对象（允许为空）</label><div class="recipient-box checkbox-row">${availablePeople.map((p)=>`<label><input type="checkbox" class="recipient-input" value="${p.id}" ${a.recipients.includes(p.id)?'checked':''}/> ${escapeHtml(p.name)} <span class="muted">${escapeHtml(p.role)}</span></label>`).join('')}</div></div>
     </div>`;
     const evidenceMeta = anomalyEvidenceMeta(a);
     const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, ss.schoolId))}</div><dl class="anomaly-reading-grid"><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生时段</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>证据画面</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd></dl></div>`;
     return `<div class="anomaly-form" data-anomaly-form="${index}">
       <div class="source-line"><div>${tag([a.source==='manual'?'人工新增':'AI分析',a.source==='manual'?'purple':'blue'])} ${a.repeat?tag(['重复问题','red']):''}</div>${isEditing?'<button class="text-link danger-text" id="delete-anomaly">删除异常项</button>':'<button class="text-link" id="edit-anomaly">调整异常信息</button>'}</div>
-      ${isEditing?`${editFields}<div class="form-actions"><button class="btn primary" id="save-result-changes">保存修改</button></div>`:`${readOnlyDetail}<div class="result-summary"><span>${tag(severityMeta[a.severity])}</span><span>${a.recipients.length?`通知对象：${escapeHtml(a.recipients.map((id)=>person(id)?.name).filter(Boolean).join('、'))}`:'未设置通知对象'}</span></div>`}
+      ${isEditing?`${editFields}<div class="form-actions"><button class="btn primary" id="save-result-changes">保存修改</button></div>`:`${readOnlyDetail}<div class="result-summary"><span>${a.recipients.length?`通知对象：${escapeHtml(a.recipients.map((id)=>person(id)?.name).filter(Boolean).join('、'))}`:'未设置通知对象'}</span></div>`}
     </div>`;
   }
 
@@ -862,7 +890,7 @@
       if (!groupAnomalies.length) return `<div class="finding-category empty">${header}</div>`;
       const scenes = `<div class="finding-scene">${groupAnomalies.map((a)=>{
           const index=draft.anomalies.indexOf(a);
-          return `<button class="finding-item ${index===activeIndex?'active':''}" data-anomaly-tab="${index}"><span class="finding-status ${a.source==='manual'?'manual':'ai'}"></span><span class="finding-main"><strong>${escapeHtml(type(a.typeId)?.label||'异常项')}</strong><small>${fmtClock(a.occurredSecond)} · ${a.source==='manual'?'人工新增':'分析结果'}</small></span><span class="finding-severity">${escapeHtml(severityMeta[a.severity]?.[0] || '一般')}</span></button>`;
+          return `<button class="finding-item ${index===activeIndex?'active':''}" data-anomaly-tab="${index}"><span class="finding-status ${a.source==='manual'?'manual':'ai'}"></span><span class="finding-main"><strong>${escapeHtml(type(a.typeId)?.label||'异常项')}</strong><small>${fmtClock(a.occurredSecond)} · ${a.source==='manual'?'人工新增':'分析结果'}</small></span></button>`;
         }).join('')}</div>`;
       return `<section class="finding-category">${header}${scenes}</section>`;
     }).join('');
@@ -880,7 +908,7 @@
     const addAnomaly=()=>{
       const firstType=db.anomalyTypes.find((t)=>t.category===draft.category) || db.anomalyTypes[0];
       const newId=`manual_${Date.now()}`;
-      draft.anomalies.push({ id:newId, source:'manual', typeId:firstType.id, category:firstType.category, objectKind:firstType.category==='teacher'?'teacher':'class', teacherId:firstType.category==='teacher'?ss.teacherId:null, classId:firstType.category==='teacher'?null:ss.classId, position:firstType.category==='teacher'?'主要教学区域':'整个班级', occurredSecond:Math.min(ss.duration*60-30,600), evidence:[], result:'formal', severity:firstType.defaultSeverity, recipients:[], submitted:false, repeat:false, deleted:false });
+      draft.anomalies.push({ id:newId, source:'manual', typeId:firstType.id, category:firstType.category, objectKind:firstType.category==='teacher'?'teacher':'class', teacherId:firstType.category==='teacher'?ss.teacherId:null, classId:firstType.category==='teacher'?null:ss.classId, position:firstType.category==='teacher'?'主要教学区域':'整个班级', occurredSecond:defaultOccurrenceSecond(firstType.id,ss), evidence:[], result:'formal', severity:firstType.defaultSeverity, recipients:[], submitted:false, repeat:false, deleted:false });
       ui.activeAnomaly[source.id]=draft.anomalies.length-1; renderApp(); toast('已新增人工异常项');
     };
     if(addButton)addButton.addEventListener('click',addAnomaly); if(addEmpty)addEmpty.addEventListener('click',addAnomaly);
@@ -901,7 +929,12 @@
         anomaly.recipients=Array.from(document.querySelectorAll('.recipient-input:checked')).map((x)=>x.value);
       }));
       const saveChanges=document.getElementById('save-result-changes');
-      if(saveChanges)saveChanges.addEventListener('click',()=>saveAnalysisResult(source,draft,anomaly));
+      if(saveChanges)saveChanges.addEventListener('click',()=>{
+        const occurredSecondInput=portal.querySelector('[data-field="occurredSecond"]');
+        if(occurredSecondInput)anomaly.occurredSecond=Number(occurredSecondInput.value);
+        if(!occurrenceMatchesScene(anomaly.typeId,anomaly.occurredSecond,ss)){toast(`${type(anomaly.typeId)?.label||'当前指标'}仅适用于${anomalyScene(anomaly.typeId)}时段，请调整发生时间`,'error');return;}
+        saveAnalysisResult(source,draft,anomaly);
+      });
       const deleteBtn=document.getElementById('delete-anomaly');
       if(deleteBtn)deleteBtn.addEventListener('click',()=>{
         if(anomaly.source==='manual'&&!clue(source.id).anomalies.some((item)=>item.id===anomaly.id)){
@@ -958,8 +991,7 @@
     const rows = groupTypes.map((item) => {
         const occurrences = groupIssues.filter((issue) => issue.typeId === item.id);
         const isIssue = occurrences.length > 0;
-        const threshold = db.rules[ss.schoolId]?.thresholds?.[item.id];
-        const meta = threshold != null && item.unit ? `当前阈值 ${threshold}${item.unit}` : item.ruleLabel;
+        const meta = ruleCriteriaSummary(item, db.rules[ss.schoolId]);
         const result = isIssue
           ? `<div class="metric-insight-result issue-result"><span>发现 ${occurrences.length} 项</span>${occurrences.map((issue) => `<button data-portrait-seek="${draft.anomalies.indexOf(issue)}">${fmtClock(issue.occurredSecond)} 回看</button>`).join('')}</div>`
           : item.id === 'student_participation'
@@ -1089,6 +1121,34 @@
     });
   }
 
+  function showRuleCriteriaEditor(typeId, schoolId, draft, readOnly) {
+    const anomalyType = type(typeId);
+    if (!anomalyType) return;
+    const values = ruleCriteriaValues(anomalyType, draft);
+    const criteria = anomalyType.criteria || [];
+    const body = `<div class="rule-criteria-intro"><strong>${escapeHtml(anomalyType.label)}</strong><span>${escapeHtml(anomalyType.ruleLabel)}</span><small>每个观测条件独立判断，任一条件达到设定值即生成对应异常项。</small></div><div class="rule-criteria-editor-list">${criteria.map((criterion) => `<div class="rule-criterion-card"><div class="rule-criterion-copy"><strong>${escapeHtml(criterion.label)}</strong><span>${escapeHtml(criterion.help)}</span></div><div class="rule-criterion-input"><span>${escapeHtml(criterion.operatorLabel)}</span><input class="control rule-criterion-value" type="number" data-criterion="${criterion.id}" value="${values[criterion.id]}" min="${criterion.min ?? 0}" max="${criterion.max ?? 9999}" step="${criterion.step ?? 1}" ${readOnly ? 'disabled' : ''}/><em>${escapeHtml(criterion.unit)}</em></div></div>`).join('')}</div>${readOnly ? '<div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button></div>' : '<div class="drawer-actions"><button class="btn" data-drawer-close-action>取消</button><button class="btn primary" id="save-rule-criteria">保存设置</button></div>'}`;
+    showDrawer(`${anomalyType.label}判定设置`, body);
+    portal.querySelectorAll('[data-drawer-close-action]').forEach((el) => el.addEventListener('click', closePortal));
+    if (readOnly) return;
+    portal.querySelector('#save-rule-criteria').addEventListener('click', () => {
+      const nextValues = {};
+      let invalid = null;
+      criteria.forEach((criterion) => {
+        const input = portal.querySelector(`[data-criterion="${criterion.id}"]`);
+        const value = Number(input?.value);
+        if (!Number.isFinite(value) || value < (criterion.min ?? 0) || value > (criterion.max ?? 9999)) invalid = criterion;
+        nextValues[criterion.id] = value;
+      });
+      if (invalid) { toast(`${invalid.label}请输入 ${invalid.min}–${invalid.max}${invalid.unit}之间的数值`, 'error'); return; }
+      if (!draft.criteria) draft.criteria = {};
+      draft.criteria[anomalyType.id] = nextValues;
+      draft.thresholds[anomalyType.id] = nextValues[criteria[0]?.id] ?? null;
+      closePortal();
+      renderApp();
+      toast(`${anomalyType.label}判定设置已更新，请保存巡课规则`);
+    });
+  }
+
   function rulesPage() {
     const viewSchoolId=ui.role==='school'?ui.schoolId:(ui.ruleSchoolId||'s1');
     if(!ui.ruleDrafts[viewSchoolId])ui.ruleDrafts[viewSchoolId]=clone(db.rules[viewSchoolId]);
@@ -1110,7 +1170,7 @@
 
   function ruleTypeSection(group,draft,readOnly) {
     const groupMeta=db.categoryGroups[group];
-    const ruleRow=(t)=>{const enabled=Boolean(draft.enabledTypes[t.id]);const canConfigure=t.configurable!==false;const thresholdControl=canConfigure?`<div class="rule-threshold-wrap"><input class="control rule-threshold" data-type="${t.id}" type="number" value="${draft.thresholds[t.id] ?? ''}" aria-label="${escapeHtml(t.label)}判定阈值" ${readOnly||!enabled?'disabled':''}/><span class="rule-unit">${escapeHtml(t.unit||'')}</span></div>`:'';return `<div class="rule-row"><div><div class="rule-name">${escapeHtml(t.label)}</div><div class="rule-desc">${escapeHtml(t.ruleLabel||'达到判定条件后生成异常项')}</div></div><label><input class="switch rule-type" type="checkbox" value="${t.id}" ${enabled?'checked':''} ${readOnly?'disabled':''}/> ${enabled?'已启用':'已停用'}</label><div class="rule-config${canConfigure?'':' rule-config-no-threshold'}">${thresholdControl}<select class="control rule-severity" data-type="${t.id}" ${readOnly||!enabled?'disabled':''}>${Object.entries(db.severityLabels).map(([id,label])=>option(id,label,draft.severityDefaults[t.id])).join('')}</select></div></div>`;};
+    const ruleRow=(t)=>{const enabled=Boolean(draft.enabledTypes[t.id]);return `<div class="rule-row${enabled?'':' is-disabled'}"><div><div class="rule-name">${escapeHtml(t.label)}</div><div class="rule-desc">${escapeHtml(t.ruleLabel||'达到判定条件后生成异常项')}</div></div><div class="rule-definition-summary"><span>当前定义</span><strong>${escapeHtml(ruleCriteriaSummary(t,draft,2))}</strong></div><label><input class="switch rule-type" type="checkbox" value="${t.id}" ${enabled?'checked':''} ${readOnly?'disabled':''}/> ${enabled?'已启用':'已停用'}</label><button class="btn small rule-setting-button" data-edit-rule-criteria="${t.id}">${readOnly?'查看定义':'设置'}</button></div>`;};
     const sceneGroups = `<div class="rule-scene-group">${groupMeta.categoryIds.flatMap((category) => db.anomalyTypes.filter((t) => t.category === category)).map(ruleRow).join('')}</div>`;
     return `<section class="card rule-section" id="rule-${group}"><div class="card-header"><div><div class="card-title">${escapeHtml(groupMeta.label)}</div></div></div><div class="card-body">${sceneGroups}</div></section>`;
   }
@@ -1118,11 +1178,10 @@
   function bindRules(schoolId,draft,readOnly) {
     const schoolSelect=document.getElementById('rule-school'); if(schoolSelect)schoolSelect.addEventListener('change',()=>{ui.ruleSchoolId=schoolSelect.value;renderApp();});
     document.querySelectorAll('[data-scroll]').forEach((el)=>el.addEventListener('click',()=>document.getElementById(el.dataset.scroll)?.scrollIntoView({behavior:'smooth',block:'start'})));
+    document.querySelectorAll('[data-edit-rule-criteria]').forEach((el)=>el.addEventListener('click',()=>showRuleCriteriaEditor(el.dataset.editRuleCriteria,schoolId,draft,readOnly)));
     if(readOnly)return;
     const updateDirty=()=>updateRuleDirtyStatus(schoolId,draft);
     document.querySelectorAll('.rule-type').forEach((el)=>el.addEventListener('change',()=>{draft.enabledTypes[el.value]=el.checked;renderApp();}));
-    document.querySelectorAll('.rule-threshold').forEach((el)=>el.addEventListener('input',()=>{draft.thresholds[el.dataset.type]=el.value===''?null:Number(el.value);updateDirty();}));
-    document.querySelectorAll('.rule-severity').forEach((el)=>el.addEventListener('change',()=>{draft.severityDefaults[el.dataset.type]=el.value;updateDirty();}));
     document.querySelectorAll('.rule-repeat-days').forEach((el)=>el.addEventListener('input',()=>{draft.repeat[el.dataset.type].days=Number(el.value);updateDirty();}));
     document.querySelectorAll('.rule-repeat-times').forEach((el)=>el.addEventListener('input',()=>{draft.repeat[el.dataset.type].times=Number(el.value);updateDirty();}));
     document.querySelectorAll('[data-edit-notify]').forEach((el)=>el.addEventListener('click',()=>showDefaultNotifyEditor(el.dataset.editNotify, schoolId, draft)));

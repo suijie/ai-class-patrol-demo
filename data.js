@@ -1,22 +1,68 @@
 (function () {
   const DEMO_NOW = '2026-08-06T10:00:00+08:00';
   const anomalyTypes = [
-    { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '观测点：迟到、早退', defaultSeverity: 'important', configurable: false, observationPoints: ['迟到', '早退'] },
-    { id: 'teacher_phone', category: 'teacher', label: '教师异常行为', ruleLabel: '观测点：使用手机、打电话、抽烟', defaultSeverity: 'serious', configurable: false, observationPoints: ['使用手机', '打电话', '抽烟'] },
-    { id: 'teacher_misconduct', category: 'teacher', label: '体罚辱生', ruleLabel: '观测点：体罚、语言暴力', defaultSeverity: 'serious', configurable: false, observationPoints: ['体罚', '语言暴力'] },
-    { id: 'teacher_schedule', category: 'teacher', label: '课间行为情况', ruleLabel: '观测点：提前到位、拖堂', defaultSeverity: 'important', configurable: false, observationPoints: ['提前到位', '拖堂'] },
-    { id: 'teacher_attire', category: 'teacher', label: '教师着装', ruleLabel: '观测点：3 分裤、5 分裤', defaultSeverity: 'normal', configurable: false, observationPoints: ['3 分裤', '5 分裤'] },
-    { id: 'teacher_sitting', category: 'teacher', label: '教师就坐', ruleLabel: '观测点：就坐时长、站立时长', defaultSeverity: 'normal', configurable: false, observationPoints: ['就坐时长', '站立时长'] },
-    { id: 'teacher_mandarin', category: 'teacher', label: '不使用普通话教学', ruleLabel: '按课堂语音识别规则判断', defaultSeverity: 'normal', configurable: false },
-    { id: 'student_discipline', category: 'student_class', label: '纪律情况', ruleLabel: '交头接耳、随意走动', defaultSeverity: 'normal', configurable: false },
-    { id: 'class_count', category: 'student_class', label: '课堂人数异常', ruleLabel: '含迟到、早退', defaultSeverity: 'important', threshold: 20, unit: '%偏差' },
-    { id: 'student_participation', category: 'student_class', label: '学生参与度低', ruleLabel: '参与度低于学校设定范围', defaultSeverity: 'normal', configurable: false },
-    { id: 'student_phone', category: 'student_class', label: '学生疑似使用手机', ruleLabel: '按疑似行为事件识别', defaultSeverity: 'important', threshold: 1, unit: '次' },
-    { id: 'student_desk', category: 'student_class', label: '学生长时间趴桌', ruleLabel: '持续趴桌时长', defaultSeverity: 'normal', threshold: 10, unit: '分钟' },
-    { id: 'student_eating', category: 'student_class', label: '吃东西', ruleLabel: '按课堂行为事件识别', defaultSeverity: 'normal', threshold: 1, unit: '次' },
-    { id: 'fighting', category: 'student_break', label: '学生疑似打斗', ruleLabel: '按疑似行为事件识别', defaultSeverity: 'serious', threshold: 1, unit: '次' },
-    { id: 'chasing', category: 'student_break', label: '学生追逐打闹', ruleLabel: '持续追逐或打闹行为', defaultSeverity: 'important', threshold: 20, unit: '秒' },
-    { id: 'break_smoking', category: 'student_break', label: '学生疑似抽烟', ruleLabel: '按疑似行为事件识别', defaultSeverity: 'important', threshold: 1, unit: '次' }
+    { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定', defaultSeverity: 'important', criteria: [
+      { id: 'late_minutes', label: '迟到', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表上课时间仍未到岗' },
+      { id: 'early_leave_minutes', label: '早退', operatorLabel: '提前', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '早于课表下课时间离开教学区域' }
+    ] },
+    { id: 'teacher_phone', category: 'teacher', label: '教师异常行为', ruleLabel: '使用手机、打电话、抽烟分别计次', defaultSeverity: 'serious', criteria: [
+      { id: 'phone_count', label: '使用手机', operatorLabel: '达到', defaultValue: 2, unit: '次', min: 1, max: 20, help: '课堂内识别到使用手机行为' },
+      { id: 'call_count', label: '打电话', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到接打电话行为' },
+      { id: 'smoking_count', label: '抽烟', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到疑似抽烟行为' }
+    ] },
+    { id: 'teacher_misconduct', category: 'teacher', label: '体罚辱生', ruleLabel: '体罚、语言暴力分别计次', defaultSeverity: 'serious', criteria: [
+      { id: 'corporal_count', label: '体罚', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到疑似体罚行为' },
+      { id: 'verbal_count', label: '语言暴力', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到疑似侮辱或威胁性语言' }
+    ] },
+    { id: 'teacher_schedule', category: 'teacher', scene: 'break', label: '课间行为情况', ruleLabel: '提前到位、拖堂分别判定', defaultSeverity: 'important', criteria: [
+      { id: 'arrival_lead_minutes', label: '提前到位', operatorLabel: '少于', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '距离上课开始的提前到位时间不足' },
+      { id: 'overrun_minutes', label: '拖堂', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表下课时间仍持续授课' }
+    ] },
+    { id: 'teacher_attire', category: 'teacher', label: '教师着装', ruleLabel: '3 分裤、5 分裤分别计次', defaultSeverity: 'normal', criteria: [
+      { id: 'three_quarter_count', label: '3 分裤', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到对应着装后计次' },
+      { id: 'five_quarter_count', label: '5 分裤', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到对应着装后计次' }
+    ] },
+    { id: 'teacher_sitting', category: 'teacher', label: '教师就坐', ruleLabel: '就坐、站立时长分别判定', defaultSeverity: 'normal', criteria: [
+      { id: 'seated_minutes', label: '累计就坐', operatorLabel: '超过', defaultValue: 20, unit: '分钟', min: 1, max: 60, help: '课堂内累计处于就坐状态' },
+      { id: 'standing_minutes', label: '累计站立', operatorLabel: '少于', defaultValue: 15, unit: '分钟', min: 1, max: 60, help: '课堂内累计处于站立状态' }
+    ] },
+    { id: 'teacher_mandarin', category: 'teacher', label: '不使用普通话教学', ruleLabel: '占比、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+      { id: 'non_mandarin_ratio', label: '非普通话占比', operatorLabel: '超过', defaultValue: 20, unit: '%', min: 1, max: 100, help: '课堂有效语音中非普通话内容占比' },
+      { id: 'continuous_minutes', label: '连续非普通话', operatorLabel: '超过', defaultValue: 3, unit: '分钟', min: 1, max: 30, help: '单次连续使用非普通话的时长' }
+    ] },
+    { id: 'student_discipline', category: 'student_class', label: '纪律情况', ruleLabel: '交头接耳、随意走动分别判定', defaultSeverity: 'normal', criteria: [
+      { id: 'whisper_count', label: '交头接耳', operatorLabel: '达到', defaultValue: 3, unit: '次', min: 1, max: 30, help: '课堂内识别到交头接耳行为' },
+      { id: 'leave_seat_seconds', label: '随意走动', operatorLabel: '持续超过', defaultValue: 30, unit: '秒', min: 5, max: 600, step: 5, help: '未获允许离开座位并持续走动' }
+    ] },
+    { id: 'class_count', category: 'student_class', label: '课堂人数异常', ruleLabel: '人数偏差、迟到、早退分别判定', defaultSeverity: 'important', criteria: [
+      { id: 'deviation_percent', label: '人数偏差', operatorLabel: '超过', defaultValue: 20, unit: '%', min: 1, max: 100, help: '实到人数与课表应到人数的偏差' },
+      { id: 'late_students', label: '学生迟到', operatorLabel: '达到', defaultValue: 3, unit: '人', min: 1, max: 50, help: '超过上课时间进入教室的学生人数' },
+      { id: 'early_leave_students', label: '学生早退', operatorLabel: '达到', defaultValue: 3, unit: '人', min: 1, max: 50, help: '早于下课时间离开教室的学生人数' }
+    ] },
+    { id: 'student_participation', category: 'student_class', label: '学生参与度低', ruleLabel: '分值、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+      { id: 'score', label: '参与度得分', operatorLabel: '低于', defaultValue: 60, unit: '分', min: 1, max: 100, help: '综合举手、发言、起立和书写等事件计算' },
+      { id: 'low_minutes', label: '低参与状态', operatorLabel: '持续超过', defaultValue: 10, unit: '分钟', min: 1, max: 60, help: '参与度持续低于设定分值' }
+    ] },
+    { id: 'student_phone', category: 'student_class', label: '学生疑似使用手机', ruleLabel: '次数、持续时长共同判定', defaultSeverity: 'important', criteria: [
+      { id: 'phone_count', label: '使用手机', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到疑似使用手机行为' },
+      { id: 'continuous_seconds', label: '单次持续', operatorLabel: '超过', defaultValue: 10, unit: '秒', min: 5, max: 300, step: 5, help: '单次疑似使用手机的连续时长' }
+    ] },
+    { id: 'student_desk', category: 'student_class', label: '学生长时间趴桌', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+      { id: 'people_count', label: '趴桌人数', operatorLabel: '达到', defaultValue: 1, unit: '人', min: 1, max: 50, help: '同时处于趴桌状态的学生人数' },
+      { id: 'continuous_minutes', label: '连续趴桌', operatorLabel: '超过', defaultValue: 10, unit: '分钟', min: 1, max: 60, help: '单次连续趴桌的时长' }
+    ] },
+    { id: 'student_eating', category: 'student_class', label: '吃东西', ruleLabel: '人数、次数分别判定', defaultSeverity: 'normal', criteria: [
+      { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 1, unit: '人', min: 1, max: 50, help: '识别到吃东西行为的学生人数' },
+      { id: 'eating_count', label: '行为次数', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到吃东西行为的次数' }
+    ] },
+    { id: 'fighting', category: 'student_break', label: '学生疑似打斗', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'serious', criteria: [
+      { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 2, unit: '人', min: 2, max: 20, help: '课间疑似参与打斗的学生人数' },
+      { id: 'continuous_seconds', label: '行为持续', operatorLabel: '超过', defaultValue: 5, unit: '秒', min: 1, max: 300, help: '疑似打斗行为连续持续的时长' }
+    ] },
+    { id: 'chasing', category: 'student_break', label: '学生追逐打闹', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'important', criteria: [
+      { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 2, unit: '人', min: 2, max: 50, help: '课间参与追逐或打闹的学生人数' },
+      { id: 'continuous_seconds', label: '行为持续', operatorLabel: '超过', defaultValue: 20, unit: '秒', min: 5, max: 600, step: 5, help: '追逐或打闹行为连续持续的时长' }
+    ] }
   ];
 
   const categories = {
@@ -60,6 +106,23 @@
     d.setDate(d.getDate() - offset);
     d.setHours(hour || 9, minute || 0, 0, 0);
     return d.toISOString();
+  }
+
+  function anomalyOccurrenceSecond(anomalyType, session, clueIndex, anomalyIndex) {
+    const durationSeconds = session.duration * 60;
+    const breakSeconds = Math.min(600, Math.floor(durationSeconds / 3));
+    const classStart = breakSeconds;
+    const classEnd = Math.max(classStart, durationSeconds - breakSeconds);
+    const breakOnly = anomalyType.category === 'student_break' || anomalyType.scene === 'break';
+    const offsetSeed = clueIndex * 173 + anomalyIndex * 221;
+    if (breakOnly) {
+      const useEndingBreak = (clueIndex + anomalyIndex) % 2 === 1;
+      if (!useEndingBreak) return 120 + (offsetSeed % Math.max(60, breakSeconds - 240));
+      return classEnd + 90 + (offsetSeed % Math.max(60, durationSeconds - classEnd - 180));
+    }
+    const safeStart = Math.min(classEnd - 90, classStart + 90);
+    const safeSpan = Math.max(60, classEnd - safeStart - 90);
+    return safeStart + (offsetSeed % safeSpan);
   }
 
   function createSeedData() {
@@ -196,8 +259,8 @@
           teacherId: isTeacher ? session.teacherId : null,
           classId: isTeacher ? null : session.classId,
           position: isTeacher ? '讲台及主要教学区域' : anomalyIndex % 2 ? '画面右侧第二区域' : '整个班级',
-          occurredSecond: 260 + ((index * 173 + anomalyIndex * 221) % Math.max(800, session.duration * 60 - 300)),
-          evidence: [{ id: `e${index}_${anomalyIndex}_1`, start: 240 + anomalyIndex * 160, end: 292 + anomalyIndex * 160, camera: 1 }],
+          occurredSecond: anomalyOccurrenceSecond(type, session, index, anomalyIndex),
+          evidence: [],
           result,
           severity: type.defaultSeverity,
           recipients,
@@ -205,6 +268,9 @@
           repeat: type.id === 'teacher_sitting' && session.teacherId === 'p11',
           deleted: result === 'deleted'
         };
+      });
+      anomalies.forEach((anomaly, anomalyIndex) => {
+        anomaly.evidence = [{ id: `e${index}_${anomalyIndex}_1`, start: Math.max(0, anomaly.occurredSecond - 20), end: Math.min(session.duration * 60, anomaly.occurredSecond + 32), camera: 1 }];
       });
       const hasSubmitted = anomalies.some((a) => a.submitted);
       return {
@@ -250,7 +316,11 @@
         updatedAt: day(4 + idx, 15, 0),
         enabledRooms: schoolRooms.map((r) => r.id),
         enabledTypes: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.defaultEnabled !== false; return acc; }, {}),
-        thresholds: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.threshold == null ? null : t.threshold; return acc; }, {}),
+        thresholds: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.criteria?.[0]?.defaultValue ?? null; return acc; }, {}),
+        criteria: anomalyTypes.reduce((acc, t) => {
+          acc[t.id] = Object.fromEntries((t.criteria || []).map((criterion) => [criterion.id, criterion.defaultValue]));
+          return acc;
+        }, {}),
         severityDefaults: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.defaultSeverity; return acc; }, {}),
         repeat: anomalyTypes.filter((t) => t.category === 'teacher').reduce((acc, t) => {
           acc[t.id] = { days: 30, times: 3 };
@@ -321,7 +391,7 @@
     }
 
     return {
-      schemaVersion: 14,
+      schemaVersion: 16,
       generatedAt: DEMO_NOW,
       region,
       schools,
