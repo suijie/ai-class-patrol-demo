@@ -1,66 +1,66 @@
 (function () {
   const DEMO_NOW = '2026-08-18T11:30:00+08:00';
-  const DEMO_VERSION = 'V0.54';
+  const DEMO_VERSION = 'V0.61';
   const anomalyTypes = [
-    { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定', defaultSeverity: 'important', criteria: [
+    { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'late_minutes', label: '迟到', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表上课时间仍未到岗' },
       { id: 'early_leave_minutes', label: '早退', operatorLabel: '提前', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '早于课表下课时间离开教学区域' }
     ] },
-    { id: 'teacher_phone', category: 'teacher', label: '教师异常行为', ruleLabel: '使用手机、打电话、抽烟分别计次', defaultSeverity: 'serious', criteria: [
+    { id: 'teacher_phone', category: 'teacher', label: '教师异常行为', ruleLabel: '使用手机、打电话、疑似抽烟分别计次，任一命中即触发', defaultSeverity: 'serious', criteria: [
       { id: 'phone_count', label: '使用手机', operatorLabel: '达到', defaultValue: 2, unit: '次', min: 1, max: 20, help: '课堂内识别到使用手机行为' },
       { id: 'call_count', label: '打电话', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到接打电话行为' },
       { id: 'smoking_count', label: '抽烟', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到疑似抽烟行为' }
     ] },
-    { id: 'teacher_misconduct', category: 'teacher', label: '体罚辱生', ruleLabel: '体罚、语言暴力分别计次', defaultSeverity: 'serious', criteria: [
+    { id: 'teacher_misconduct', category: 'teacher', label: '体罚辱生', ruleLabel: '疑似体罚、疑似语言暴力分别计次，任一命中即触发', defaultSeverity: 'serious', defaultEnabled: false, criteria: [
       { id: 'corporal_count', label: '体罚', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到疑似体罚行为' },
       { id: 'verbal_count', label: '语言暴力', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到疑似侮辱或威胁性语言' }
     ] },
-    { id: 'teacher_schedule', category: 'teacher', scene: 'break', label: '课间行为情况', ruleLabel: '提前到位、拖堂分别判定', defaultSeverity: 'important', criteria: [
+    { id: 'teacher_schedule', category: 'teacher', scene: 'break', label: '课间行为情况', ruleLabel: '提前到位、拖堂分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'arrival_lead_minutes', label: '提前到位', operatorLabel: '少于', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '距离上课开始的提前到位时间不足' },
       { id: 'overrun_minutes', label: '拖堂', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表下课时间仍持续授课' }
     ] },
-    { id: 'teacher_attire', category: 'teacher', label: '教师着装', ruleLabel: '3 分裤、5 分裤分别计次', defaultSeverity: 'normal', criteria: [
+    { id: 'teacher_attire', category: 'teacher', label: '教师着装', ruleLabel: '3 分裤、5 分裤分别计次，任一命中即触发', defaultSeverity: 'normal', defaultEnabled: false, criteria: [
       { id: 'three_quarter_count', label: '3 分裤', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到对应着装后计次' },
       { id: 'five_quarter_count', label: '5 分裤', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 10, help: '识别到对应着装后计次' }
     ] },
-    { id: 'teacher_sitting', category: 'teacher', label: '教师就坐', ruleLabel: '就坐、站立时长分别判定', defaultSeverity: 'normal', criteria: [
+    { id: 'teacher_sitting', category: 'teacher', label: '教师就坐', ruleLabel: '就坐、站立时长分别判定，任一命中即触发', defaultSeverity: 'normal', criteria: [
       { id: 'seated_minutes', label: '累计就坐', operatorLabel: '超过', defaultValue: 20, unit: '分钟', min: 1, max: 60, help: '课堂内累计处于就坐状态' },
       { id: 'standing_minutes', label: '累计站立', operatorLabel: '少于', defaultValue: 15, unit: '分钟', min: 1, max: 60, help: '课堂内累计处于站立状态' }
     ] },
-    { id: 'teacher_mandarin', category: 'teacher', label: '不使用普通话教学', ruleLabel: '占比、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+    { id: 'teacher_mandarin', category: 'teacher', label: '不使用普通话教学', ruleLabel: '占比、持续时长分别判定，任一命中即触发', defaultSeverity: 'normal', defaultEnabled: false, criteria: [
       { id: 'non_mandarin_ratio', label: '非普通话占比', operatorLabel: '超过', defaultValue: 20, unit: '%', min: 1, max: 100, help: '课堂有效语音中非普通话内容占比' },
       { id: 'continuous_minutes', label: '连续非普通话', operatorLabel: '超过', defaultValue: 3, unit: '分钟', min: 1, max: 30, help: '单次连续使用非普通话的时长' }
     ] },
-    { id: 'student_discipline', category: 'student_class', label: '纪律情况', ruleLabel: '交头接耳、随意走动分别判定', defaultSeverity: 'normal', criteria: [
+    { id: 'student_discipline', category: 'student_class', label: '纪律情况', ruleLabel: '交头接耳、随意走动分别判定，任一命中即触发', defaultSeverity: 'normal', criteria: [
       { id: 'whisper_count', label: '交头接耳', operatorLabel: '达到', defaultValue: 3, unit: '次', min: 1, max: 30, help: '课堂内识别到交头接耳行为' },
       { id: 'leave_seat_seconds', label: '随意走动', operatorLabel: '持续超过', defaultValue: 30, unit: '秒', min: 5, max: 600, step: 5, help: '未获允许离开座位并持续走动' }
     ] },
-    { id: 'class_count', category: 'student_class', label: '课堂人数异常', ruleLabel: '人数偏差、迟到、早退分别判定', defaultSeverity: 'important', criteria: [
+    { id: 'class_count', category: 'student_class', label: '课堂人数异常', ruleLabel: '人数偏差、迟到、早退分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'deviation_percent', label: '人数偏差', operatorLabel: '超过', defaultValue: 20, unit: '%', min: 1, max: 100, help: '实到人数与课表应到人数的偏差' },
       { id: 'late_students', label: '学生迟到', operatorLabel: '达到', defaultValue: 3, unit: '人', min: 1, max: 50, help: '超过上课时间进入教室的学生人数' },
       { id: 'early_leave_students', label: '学生早退', operatorLabel: '达到', defaultValue: 3, unit: '人', min: 1, max: 50, help: '早于下课时间离开教室的学生人数' }
     ] },
-    { id: 'student_participation', category: 'student_class', label: '学生参与度低', ruleLabel: '分值、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+    { id: 'student_participation', category: 'student_class', label: '学生参与度低', ruleLabel: '分值、持续时长分别判定，任一命中即触发', defaultSeverity: 'normal', criteria: [
       { id: 'score', label: '参与度得分', operatorLabel: '低于', defaultValue: 60, unit: '分', min: 1, max: 100, help: '综合举手、发言、起立和书写等事件计算' },
       { id: 'low_minutes', label: '低参与状态', operatorLabel: '持续超过', defaultValue: 10, unit: '分钟', min: 1, max: 60, help: '参与度持续低于设定分值' }
     ] },
-    { id: 'student_phone', category: 'student_class', label: '学生疑似使用手机', ruleLabel: '次数、持续时长共同判定', defaultSeverity: 'important', criteria: [
+    { id: 'student_phone', category: 'student_class', label: '学生疑似使用手机', ruleLabel: '次数、持续时长分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'phone_count', label: '使用手机', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到疑似使用手机行为' },
       { id: 'continuous_seconds', label: '单次持续', operatorLabel: '超过', defaultValue: 10, unit: '秒', min: 5, max: 300, step: 5, help: '单次疑似使用手机的连续时长' }
     ] },
-    { id: 'student_desk', category: 'student_class', label: '学生长时间趴桌', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'normal', criteria: [
+    { id: 'student_desk', category: 'student_class', label: '学生长时间趴桌', ruleLabel: '人数、持续时长分别判定，任一命中即触发', defaultSeverity: 'normal', criteria: [
       { id: 'people_count', label: '趴桌人数', operatorLabel: '达到', defaultValue: 1, unit: '人', min: 1, max: 50, help: '同时处于趴桌状态的学生人数' },
       { id: 'continuous_minutes', label: '连续趴桌', operatorLabel: '超过', defaultValue: 10, unit: '分钟', min: 1, max: 60, help: '单次连续趴桌的时长' }
     ] },
-    { id: 'student_eating', category: 'student_class', label: '吃东西', ruleLabel: '人数、次数分别判定', defaultSeverity: 'normal', criteria: [
+    { id: 'student_eating', category: 'student_class', label: '吃东西', ruleLabel: '人数、次数分别判定，任一命中即触发', defaultSeverity: 'normal', criteria: [
       { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 1, unit: '人', min: 1, max: 50, help: '识别到吃东西行为的学生人数' },
       { id: 'eating_count', label: '行为次数', operatorLabel: '达到', defaultValue: 1, unit: '次', min: 1, max: 20, help: '课堂内识别到吃东西行为的次数' }
     ] },
-    { id: 'fighting', category: 'student_break', label: '学生疑似打斗', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'serious', criteria: [
+    { id: 'fighting', category: 'student_break', label: '学生疑似打斗', ruleLabel: '人数、持续时长分别判定，任一命中即触发', defaultSeverity: 'serious', criteria: [
       { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 2, unit: '人', min: 2, max: 20, help: '课间疑似参与打斗的学生人数' },
       { id: 'continuous_seconds', label: '行为持续', operatorLabel: '超过', defaultValue: 5, unit: '秒', min: 1, max: 300, help: '疑似打斗行为连续持续的时长' }
     ] },
-    { id: 'chasing', category: 'student_break', label: '学生追逐打闹', ruleLabel: '人数、持续时长共同判定', defaultSeverity: 'important', criteria: [
+    { id: 'chasing', category: 'student_break', label: '学生追逐打闹', ruleLabel: '人数、持续时长分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'people_count', label: '涉及人数', operatorLabel: '达到', defaultValue: 2, unit: '人', min: 2, max: 50, help: '课间参与追逐或打闹的学生人数' },
       { id: 'continuous_seconds', label: '行为持续', operatorLabel: '超过', defaultValue: 20, unit: '秒', min: 5, max: 600, step: 5, help: '追逐或打闹行为连续持续的时长' }
     ] }
@@ -247,33 +247,31 @@
       };
     });
 
-    const issueTasks = tasks.filter((t) => ['complete_issue', 'partial'].includes(t.status));
-    const resultPatterns = [
-      ['unprocessed', 'unprocessed'],
-      ['formal', 'uncertain'],
-      ['formal', 'false'],
-      ['false'],
-      ['formal', 'formal'],
-      ['uncertain', 'unprocessed'],
-      ['deleted'],
-      ['formal']
-    ];
-    const clues = issueTasks.map((task, index) => {
+    const resultTasks = tasks.filter((t) => ['complete_issue', 'complete_none', 'partial'].includes(t.status));
+    let partialNo = 0;
+    const clues = resultTasks.map((task, index) => {
       const session = sessions.find((s) => s.id === task.sessionId);
       const categoryList = ['teacher', 'student_class', 'student_break'];
       const category = categoryList[index % categoryList.length];
       const types = anomalyTypes.filter((t) => t.category === category);
-      const pattern = resultPatterns[index % resultPatterns.length];
       const classInfo = classes.find((c) => c.id === session.classId);
-      const anomalies = pattern.map((result, anomalyIndex) => {
+      const partialIndex = task.status === 'partial' ? partialNo++ : -1;
+      const deletedAiScenario = task.status === 'complete_issue' && index === 4;
+      const manualScenario = task.status === 'complete_issue' && index === 5;
+      const anomalyCount = task.status === 'complete_none'
+        ? 0
+        : task.status === 'partial'
+          ? (partialIndex % 2 === 0 ? 1 : 0)
+          : (index % 3 === 0 ? 2 : 1);
+      const anomalies = Array.from({ length: anomalyCount }, (_, anomalyIndex) => {
         const type = types[(index * 2 + anomalyIndex) % types.length];
         const isTeacher = category === 'teacher';
-        const recipients = result === 'formal'
-          ? [isTeacher ? session.teacherId : classInfo.homeroomId]
-          : [];
+        const source = manualScenario ? 'manual' : 'ai';
+        const deleted = deletedAiScenario;
+        const recipients = deleted ? [] : [isTeacher ? session.teacherId : classInfo.homeroomId];
         return {
           id: `a${index + 1}_${anomalyIndex + 1}`,
-          source: index === 5 && anomalyIndex === 1 ? 'manual' : 'ai',
+          source,
           typeId: type.id,
           category,
           objectKind: isTeacher ? 'teacher' : anomalyIndex % 2 ? 'position' : 'class',
@@ -282,39 +280,57 @@
           position: isTeacher ? '讲台及主要教学区域' : anomalyIndex % 2 ? '画面右侧第二区域' : '整个班级',
           occurredSecond: anomalyOccurrenceSecond(type, session, index, anomalyIndex),
           evidence: [],
-          result,
+          result: deleted ? 'deleted' : 'formal',
           severity: type.defaultSeverity,
           recipients,
-          submitted: result !== 'unprocessed',
+          submitted: true,
           repeat: type.id === 'teacher_sitting' && session.teacherId === 'p11',
           confidence: 88 + ((index + anomalyIndex) % 8),
           rationale: `${type.criteria?.[0]?.label || type.label}观测结果达到学校当前判定定义`,
-          deleted: result === 'deleted'
+          deleted,
+          manualNote: source === 'manual' ? '巡课人员结合课堂实际补充记录' : ''
         };
       });
       anomalies.forEach((anomaly, anomalyIndex) => {
         anomaly.evidence = [{ id: `e${index}_${anomalyIndex}_1`, start: Math.max(0, anomaly.occurredSecond - 20), end: Math.min(session.duration * 60, anomaly.occurredSecond + 32), camera: 1 }];
       });
-      const hasSubmitted = anomalies.some((a) => a.submitted);
+      const aiBaseline = anomalies.filter((item) => item.source === 'ai').map((item) => ({
+        ...JSON.parse(JSON.stringify(item)),
+        result: 'formal',
+        deleted: false,
+        recipients: []
+      }));
+      const adjusted = deletedAiScenario || manualScenario;
+      const visibleCount = anomalies.filter((item) => !item.deleted).length;
+      const completeness = task.status === 'partial' ? 'partial' : 'complete';
       return {
         id: `clue${index + 1}`,
         taskId: task.id,
         sessionId: session.id,
         category,
         aiCreatedAt: day(Math.max(0, 1 + (index % 27)), 18, 5),
-        aiOriginalCount: anomalies.filter((a) => a.source === 'ai').length,
-        revision: hasSubmitted ? 2 : 1,
-        lastUpdatedAt: hasSubmitted ? day(Math.max(0, index % 20), 16, 30) : null,
-        lastUpdatedBy: hasSubmitted ? (index % 2 ? '林静' : '方立新') : null,
-        remoteRevision: null,
+        aiOriginalCount: aiBaseline.length,
+        aiBaseline,
+        revision: adjusted ? 2 : 1,
+        lastUpdatedAt: adjusted ? day(Math.max(0, index % 20), 16, 30) : null,
+        lastUpdatedBy: adjusted ? (index % 2 ? '林静' : '方立新') : null,
+        conflictDemo: index === 1,
+        conflictTriggered: false,
         anomalies,
-        history: hasSubmitted
+        currentResult: {
+          anomalyStatus: visibleCount ? 'issue' : 'none',
+          completeness,
+          issueCount: visibleCount,
+          unavailableCount: task.failures.filter((item) => item.typeId !== 'all').length,
+          adjusted
+        },
+        history: adjusted
           ? [{
               version: 1,
               author: index % 2 ? '林静' : '方立新',
               at: day(Math.max(0, index % 20), 16, 30),
-              summary: '完成首次核查提交',
-              diff: `正式问题 ${anomalies.filter((a) => a.result === 'formal').length} 项，误报 ${anomalies.filter((a) => a.result === 'false').length} 项，暂不确定 ${anomalies.filter((a) => a.result === 'uncertain').length} 项`,
+              summary: deletedAiScenario ? '删除 AI 异常后重新计算课堂结果' : '人工新增异常后重新计算课堂结果',
+              diff: `AI 原始异常 ${aiBaseline.length} 项，当前有效异常 ${visibleCount} 项`,
               snapshot: JSON.parse(JSON.stringify(anomalies))
             }]
           : []
@@ -329,6 +345,10 @@
         a.teacherId = 'p11';
         if (a.typeId === 'teacher_sitting' || a.typeId === 'teacher_absent') a.repeat = true;
       });
+      clue.aiBaseline.forEach((a) => {
+        a.teacherId = 'p11';
+        if (a.typeId === 'teacher_sitting' || a.typeId === 'teacher_absent') a.repeat = true;
+      });
     });
 
     const rules = {};
@@ -340,6 +360,8 @@
         effectiveFrom: day(4 + idx, 15, 0),
         updatedBy: idx === 0 ? '林静' : idx === 1 ? '方立新' : '郑欣',
         enabledRooms: schoolRooms.map((r) => r.id),
+        preClassMinutes: 10,
+        postClassMinutes: 10,
         enabledTypes: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.defaultEnabled !== false; return acc; }, {}),
         thresholds: anomalyTypes.reduce((acc, t) => { acc[t.id] = t.criteria?.[0]?.defaultValue ?? null; return acc; }, {}),
         criteria: anomalyTypes.reduce((acc, t) => {
@@ -351,11 +373,29 @@
           acc[t.id] = { days: 30, times: 3 };
           return acc;
         }, {}),
-        notifyTeacher: ['role:teacher'],
-        notifyStudent: ['role:homeroom'],
+        notifyTeacher: ['role:teacher', 'role:director'],
+        notifyStudent: ['role:homeroom', 'role:director'],
         allowFullVideo: idx === 0
       };
     });
+
+    clues.forEach((clue) => {
+      const session = sessions.find((item) => item.id === clue.sessionId);
+      const director = people.find((item) => item.schoolId === session.schoolId && item.position === '教导主任');
+      clue.anomalies.filter((item) => item.result === 'formal' && !item.deleted).forEach((item) => {
+        if (director && !item.recipients.includes(director.id)) item.recipients.push(director.id);
+      });
+    });
+
+    if (clues[0]) {
+      clues[0].lessonReview = {
+        tags: ['目标明确', '课堂秩序良好'],
+        comment: '课堂目标清晰，师生互动自然，建议继续关注个别学生的参与情况。',
+        rubric: { objective: '5', organization: '4', interaction: '4', engagement: '4', achievement: '4' },
+        updatedAt: day(0, 16, 0),
+        updatedBy: '林静'
+      };
+    }
 
     const formalIssues = [];
     clues.forEach((clue) => {
@@ -407,16 +447,17 @@
     });
 
     // 提供更正和撤回通知初始样例。
-    if (notifications.length >= 2) {
-      const correctionBefore = JSON.parse(JSON.stringify(notifications[0].afterSnapshot));
+    const personalNotice = notifications.find((item) => item.recipientId === 'p10');
+    if (personalNotice) {
+      const correctionBefore = JSON.parse(JSON.stringify(personalNotice.afterSnapshot));
       const correctionAfter = JSON.parse(JSON.stringify(correctionBefore.slice(0, 1)));
       if (correctionAfter[0]) correctionAfter[0].occurredSecond += 90;
-      notifications.push({ ...notifications[0], id: `n${noticeNo++}`, kind: 'correction', title: '课堂巡课问题更正通知', sentAt: day(1, 17, 20), before: notifications[0].anomalyIds, after: notifications[0].anomalyIds.slice(0, 1), beforeSnapshot: correctionBefore, afterSnapshot: correctionAfter, read: false });
-      notifications.push({ ...notifications[1], id: `n${noticeNo++}`, kind: 'withdraw', title: '课堂巡课问题撤回通知', sentAt: day(2, 11, 10), before: notifications[1].anomalyIds, after: [], beforeSnapshot: JSON.parse(JSON.stringify(notifications[1].afterSnapshot)), afterSnapshot: [], read: true });
+      notifications.push({ ...personalNotice, id: `n${noticeNo++}`, kind: 'correction', title: '课堂巡课问题更正通知', sentAt: day(1, 17, 20), before: personalNotice.anomalyIds, after: personalNotice.anomalyIds.slice(0, 1), beforeSnapshot: correctionBefore, afterSnapshot: correctionAfter, read: false });
+      notifications.push({ ...personalNotice, id: `n${noticeNo++}`, kind: 'withdraw', title: '课堂巡课问题撤回通知', sentAt: day(2, 11, 10), before: personalNotice.anomalyIds, after: [], beforeSnapshot: JSON.parse(JSON.stringify(personalNotice.afterSnapshot)), afterSnapshot: [], read: true });
     }
 
     return {
-      schemaVersion: 17,
+      schemaVersion: 19,
       demoVersion: DEMO_VERSION,
       generatedAt: DEMO_NOW,
       region,
