@@ -175,7 +175,7 @@ select.enhanced-native { position:absolute !important; width:1px !important; hei
 .card-header { padding:16px 18px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #eff0f2; }
 .card-title { color:var(--title); font-size:15px; font-weight:600; }
 .card-body { padding:18px; }
-.metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+.metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
 .dashboard-guidance-grid { display:grid; grid-template-columns:var(--dashboard-columns); align-items:stretch; gap:16px; margin-bottom:16px; }
 .dashboard-guidance-grid > .card, .grid-2 > .card, .grid-even > .card { min-width:0; }
 .action-queue-card, .analysis-state-card { overflow:hidden; }
@@ -592,7 +592,7 @@ tbody tr.clickable:hover { background:#f6f9ff; }
 .portrait-participation > div > span { color:var(--desc); font-size:11px; }
 .portrait-participation > div > strong { margin-top:2px; color:#268850; font-size:14px; }
 .portrait-participation > div > small { margin-top:2px; color:#7c8980; font-size:11px; }
-.portrait-participation > button { position:relative; width:46%; height:48px; padding:0; border:0; background:transparent; cursor:pointer; text-align:left; }
+.portrait-participation > button { position:relative; width:46%; height:58px; padding:0; border:0; background:transparent; cursor:pointer; text-align:left; }
 .portrait-participation .participation-sparkline { position:static; width:100%; height:37px; }
 .portrait-participation button > span { display:block; color:#268850; font-size:10px; text-align:right; }
 .portrait-event-timeline { margin-top:10px; padding:11px 13px; border:1px solid #e6eaef; border-radius:4px; background:#fafbfc; }
@@ -721,7 +721,6 @@ tbody tr.clickable:hover { background:#f6f9ff; }
 @media (max-width: 1440px) {
   :root { --sidebar:216px; }
   .global-nav { gap:22px; }
-  .metrics { grid-template-columns:repeat(3,1fr); }
 }
 
 @media (max-width: 1360px) {

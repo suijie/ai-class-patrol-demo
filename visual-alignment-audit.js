@@ -36,6 +36,50 @@
     });
   }
 
+  function auditDashboardMetrics(failures) {
+    document.querySelectorAll('.metrics').forEach((group, groupIndex) => {
+      const cards = Array.from(group.children).filter(isVisible);
+      if (cards.length !== 4) return;
+      const groupBox = rect(group);
+      const boxes = cards.map(rect);
+      const first = boxes[0];
+      const last = boxes[boxes.length - 1];
+      const sameRow = boxes.every((box) => closeEnough(box.top, first.top));
+      const equalWidth = boxes.every((box) => closeEnough(box.width, first.width));
+      const fillsContainer = closeEnough(first.left, groupBox.left) && closeEnough(last.right, groupBox.right);
+      if (!sameRow || !equalWidth || !fillsContainer) {
+        failures.push({
+          code: 'DASHBOARD_METRICS_LAYOUT_MISMATCH',
+          groupIndex,
+          expected: { columns: 4, left: groupBox.left, right: groupBox.right, width: first.width },
+          actual: boxes.map((box) => ({ top: box.top, left: box.left, right: box.right, width: box.width }))
+        });
+      }
+    });
+  }
+
+  function auditInteractiveHitAreas(failures) {
+    document.querySelectorAll('.portrait-participation > button').forEach((button, index) => {
+      if (!isVisible(button)) return;
+      const buttonBox = rect(button);
+      const descendants = Array.from(button.querySelectorAll('*')).filter(isVisible).map(rect);
+      if (!descendants.length) return;
+      const contentBox = {
+        top: Math.min(...descendants.map((box) => box.top)),
+        right: Math.max(...descendants.map((box) => box.right)),
+        bottom: Math.max(...descendants.map((box) => box.bottom)),
+        left: Math.min(...descendants.map((box) => box.left))
+      };
+      const contentOutside = contentBox.top < buttonBox.top - tolerance
+        || contentBox.right > buttonBox.right + tolerance
+        || contentBox.bottom > buttonBox.bottom + tolerance
+        || contentBox.left < buttonBox.left - tolerance;
+      if (contentOutside) {
+        failures.push({ code: 'INTERACTIVE_CONTENT_OUTSIDE_HIT_AREA', index, expected: buttonBox, actual: contentBox });
+      }
+    });
+  }
+
   function run() {
     const failures = [];
     const root = document.documentElement;
@@ -54,6 +98,8 @@
     });
 
     ['.metrics', '.dashboard-guidance-grid', '.grid-2', '.grid-even'].forEach((selector) => auditGroup(selector, failures));
+    auditDashboardMetrics(failures);
+    auditInteractiveHitAreas(failures);
 
     document.querySelectorAll('.dashboard-guidance-grid, .grid-2, .grid-even').forEach((group, groupIndex) => {
       const headers = Array.from(group.querySelectorAll(':scope > .card > .card-header')).filter(isVisible).map(rect);

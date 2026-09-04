@@ -1,6 +1,6 @@
 (function () {
   const DEMO_NOW = '2026-08-18T11:30:00+08:00';
-  const DEMO_VERSION = 'V0.61';
+  const DEMO_VERSION = 'V0.63';
   const anomalyTypes = [
     { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'late_minutes', label: '迟到', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表上课时间仍未到岗' },

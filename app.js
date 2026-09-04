@@ -396,7 +396,7 @@
         <div class="brand-area"><div class="brand-mark">三</div><div class="brand-name">三个课堂平台</div></div>
         <nav class="global-nav" aria-label="平台模块"><span class="active">首页</span><span>数据中心</span><span>名师课堂</span><span>专递课堂</span><span>名校网络课堂</span><span>教学成果</span><span>精品课</span></nav>
         <div class="top-actions">
-          <span class="demo-version-pill">演示数据 · ${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.61')}</span>
+          <span class="demo-version-pill">演示数据 · ${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.63')}</span>
           <div class="role-switch"><button data-role="school" class="${ui.role === 'school' ? 'active' : ''}">校级管理员</button><button data-role="region" class="${ui.role === 'region' ? 'active' : ''}">区域管理员</button></div>
           <button class="icon-btn" title="打开演示指南" aria-label="打开演示指南" data-action="guide">${icon('help')}</button>
           <button class="icon-btn" title="恢复演示数据" aria-label="恢复演示数据" data-action="refresh">${icon('refresh')}</button>
@@ -432,14 +432,14 @@
       renderApp();
     }));
     const refresh = document.querySelector('[data-action="refresh"]');
-    if (refresh) refresh.addEventListener('click', () => { showModal({title:'恢复演示数据',body:'<div class="warning-box">将清除当前浏览器内的规则修改、结果调整、点评和消息已读状态，并恢复为固定演示数据。</div>',confirmText:'确认恢复',onConfirm:()=>{resetDB();renderApp();toast('演示数据已恢复');}}); });
+    if (refresh) refresh.addEventListener('click', () => { showModal({title:'恢复演示数据',body:'<div class="warning-box">将清除当前浏览器内的规则修改和结果调整，并恢复为固定演示数据。</div>',confirmText:'确认恢复',onConfirm:()=>{resetDB();renderApp();toast('演示数据已恢复');}}); });
     document.querySelector('[data-action="guide"]')?.addEventListener('click', showDemoGuide);
   }
 
   function showDemoGuide() {
-    const body = `<div class="demo-guide-intro"><span class="demo-version-pill">${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.61')}</span><div><strong>AI 巡课完整演示路径</strong><p>全部姓名、课堂和识别结果均为虚构演示数据；页面修改仅保存在当前浏览器。</p></div></div>
+    const body = `<div class="demo-guide-intro"><span class="demo-version-pill">${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.63')}</span><div><strong>AI 巡课完整演示路径</strong><p>全部姓名、课堂和识别结果均为虚构演示数据；页面修改仅保存在当前浏览器。</p></div></div>
       <ol class="demo-story-list">
-        <li><strong>查看总体情况</strong><span>在巡课看板查看趋势、问题分布、重点课堂和排名。</span></li>
+        <li><strong>查看总体情况</strong><span>在巡课看板查看核心数据、趋势、问题分布、排名和最新结果。</span></li>
         <li><strong>查看分析证据</strong><span>进入分析结果，按异常时间定位三画面课堂视频。</span></li>
         <li><strong>修正当前结果</strong><span>修改或删除异常项，保存后同步刷新统计。</span></li>
         <li><strong>维护学校规则</strong><span>调整指标启停、观测点阈值和课前课后分析时长。</span></li>
@@ -574,7 +574,7 @@
     const statusCopy = {
       waiting: ['等待视频', '课堂视频尚未就绪，不生成课堂结果；视频到达后自动进入分析。'],
       analyzing: ['分析中', '仅展示处理状态，不提前给出正常或异常结论。'],
-      partial: ['部分指标无结论', '已完成指标可展示；失败指标明确标记无结论，不计入正常数量。'],
+      partial: ['部分分析异常', '已完成指标可展示；失败指标明确标记分析异常，不计入正常数量。'],
       failed: ['分析失败', '不生成课堂结论，需由内部任务监控处理，业务端不提供虚假正常结果。']
     };
     const representative = statusOrder.map((status) => tasks.find((item) => item.status === status)).filter(Boolean);
@@ -818,11 +818,11 @@
       const unavailableTypes = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'unavailable');
       const normalCount = normalTypes.length;
       const isTeacher = groupId === 'teacher';
-      const state = groupAnomalies.length ? `${groupAnomalies.length} 项需关注` : unavailableTypes.length ? `${unavailableTypes.length} 项无结论` : '未发现异常';
+      const state = groupAnomalies.length ? `${groupAnomalies.length} 项需关注` : unavailableTypes.length ? `${unavailableTypes.length} 项分析异常` : '未发现异常';
       const issueList = groupAnomalies.length
         ? `<div class="portrait-issue-list">${groupAnomalies.map((item) => `<button class="portrait-issue" data-seek-lesson="${draft.anomalies.indexOf(item)}"><span>${escapeHtml(type(item.typeId)?.label || '异常项')}</span><strong>${fmtClock(item.occurredSecond)}</strong></button>`).join('')}</div>`
         : '';
-      const statusCopy = `<div class="portrait-normal-copy">${isTeacher ? `已配置 ${groupTypes.length} 项教师行为指标，其中 ${normalCount} 项表现正常` : `已配置 ${groupTypes.length} 项学生行为指标，其中 ${normalCount} 项表现正常`}${unavailableTypes.length ? `，${unavailableTypes.length} 项因数据不足无结论` : ''}</div>`;
+      const statusCopy = `<div class="portrait-normal-copy">${isTeacher ? `已配置 ${groupTypes.length} 项教师行为指标，其中 ${normalCount} 项表现正常` : `已配置 ${groupTypes.length} 项学生行为指标，其中 ${normalCount} 项表现正常`}${unavailableTypes.length ? `，${unavailableTypes.length} 项分析异常` : ''}</div>`;
       const indicatorSummary = isTeacher
         ? `<div class="portrait-indicator-line"><span>正常指标</span><strong>${normalCount} 项</strong><small>${normalTypes.slice(0, 3).map((item) => escapeHtml(item.label)).join('、') || '—'}</small></div>`
         : insight.statusByType.student_participation?.state === 'normal'
@@ -832,7 +832,7 @@
       return `<article class="portrait-domain ${stateClass}"><div class="portrait-domain-head"><div><span>${escapeHtml(group.label)}</span><strong>${state}</strong></div><button class="text-link" data-detail-action="behavior-insight" data-behavior-group="${groupId}">${groupAnomalies.length ? '查看异常' : '查看分析'}</button></div>${issueList}${statusCopy}${indicatorSummary}</article>`;
     }).join('');
     return `<section class="indicator-overview behavior-portrait" aria-label="分析详情"><div class="indicator-overview-heading"><div><h2>分析详情</h2></div></div>
-      <div class="portrait-summary-row${insight.unavailableMetrics ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${insight.visible.length}<small> 项异常</small></strong><em>${insight.visible.length ? '已命中规则，可回看证据' : '当前未发现异常'}</em></div><div><span>正常</span><strong>${insight.normalMetrics}<small> 项指标</small></strong><em>未触发异常规则</em></div>${insight.unavailableMetrics ? `<div><span>无结论</span><strong>${insight.unavailableMetrics}<small> 项指标</small></strong><em>数据不足，不计入正常</em></div>` : ''}</div>
+      <div class="portrait-summary-row${insight.unavailableMetrics ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${insight.visible.length}<small> 项异常</small></strong><em>${insight.visible.length ? '已命中规则，可回看证据' : '当前未发现异常'}</em></div><div><span>正常</span><strong>${insight.normalMetrics}<small> 项指标</small></strong><em>未触发异常规则</em></div>${insight.unavailableMetrics ? `<div><span>分析异常</span><strong>${insight.unavailableMetrics}<small> 项指标</small></strong><em>未形成结论，不计入正常</em></div>` : ''}</div>
       <div class="portrait-domain-grid">${groupDetails}</div>
     </section>`;
   }
@@ -1107,14 +1107,14 @@
         const result = isIssue
           ? `<div class="metric-insight-result issue-result"><span>发现 ${occurrences.length} 项</span>${occurrences.map((issue) => `<button data-portrait-seek="${draft.anomalies.indexOf(issue)}">${fmtClock(issue.occurredSecond)} 回看</button>`).join('')}</div>`
           : isUnavailable
-            ? `<div class="metric-insight-result unavailable-result"><span>无结论</span><small>${escapeHtml(metricStatus.reason || item.unavailablePolicy || '分析所需数据不足')}</small></div>`
+            ? `<div class="metric-insight-result unavailable-result"><span>分析异常</span><small>${escapeHtml(metricStatus.reason || item.unavailablePolicy || '分析所需数据不足')}</small></div>`
           : item.id === 'student_participation'
             ? `<div class="metric-insight-result normal-result participation-result"><span>正常 · ${insight.participation} 分</span><button data-detail-action="participation">查看变化 ›</button>${participationTrendChart(insight.participationValues)}</div>`
             : `<div class="metric-insight-result normal-result"><span>正常</span><small>未触发异常规则</small></div>`;
-        return `<article class="metric-insight-row ${isIssue ? 'has-issue' : isUnavailable ? 'is-unavailable' : 'is-normal'}"><div class="metric-insight-main"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(meta || '已按当前规则完成分析')}</span><small>${escapeHtml(`${item.applicableScene || anomalyScene(item.id)} · ${item.signalSource || '课堂音视频'}`)}</small></div><div class="metric-insight-status">${isIssue ? tag(['需关注', 'orange']) : isUnavailable ? tag(['无结论', 'gray']) : tag(['正常', 'green'])}</div>${result}</article>`;
+        return `<article class="metric-insight-row ${isIssue ? 'has-issue' : isUnavailable ? 'is-unavailable' : 'is-normal'}"><div class="metric-insight-main"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(meta || '已按当前规则完成分析')}</span><small>${escapeHtml(`${item.applicableScene || anomalyScene(item.id)} · ${item.signalSource || '课堂音视频'}`)}</small></div><div class="metric-insight-status">${isIssue ? tag(['需关注', 'orange']) : isUnavailable ? tag(['分析异常', 'gray']) : tag(['正常', 'green'])}</div>${result}</article>`;
       }).join('');
     const unavailableCount = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'unavailable').length;
-    const body = `<div class="behavior-insight-summary${unavailableCount ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${groupIssues.length} 项异常</strong></div><div><span>正常</span><strong>${normalCount} 项指标</strong></div>${unavailableCount ? `<div><span>无结论</span><strong>${unavailableCount} 项指标</strong></div>` : ''}</div><div class="metric-insight-list">${rows}</div><div class="drawer-actions"><button class="btn" id="open-group-management">查看异常项</button></div>`;
+    const body = `<div class="behavior-insight-summary${unavailableCount ? ' has-unavailable' : ''}"><div><span>需关注</span><strong>${groupIssues.length} 项异常</strong></div><div><span>正常</span><strong>${normalCount} 项指标</strong></div>${unavailableCount ? `<div><span>分析异常</span><strong>${unavailableCount} 项指标</strong></div>` : ''}</div><div class="metric-insight-list">${rows}</div><div class="drawer-actions"><button class="btn" id="open-group-management">查看异常项</button></div>`;
     showDrawer(`${group.label}分析`, body);
     portal.querySelectorAll('[data-portrait-seek]').forEach((el) => el.addEventListener('click', () => {
       const index = Number(el.dataset.portraitSeek);
@@ -1178,7 +1178,7 @@
     current.lastUpdatedBy=currentUser()?.name||'校级管理员';
     const after=updateCurrentResult(current);
     current.history=current.history||[];
-    current.history.push({version:current.revision,author:current.lastUpdatedBy,at:current.lastUpdatedAt,summary:message||'人工调整后重新计算课堂结果',diff:`${before.anomalyStatus==='issue'?'有异常':'无异常'} ${before.issueCount} 项 → ${after.anomalyStatus==='issue'?'有异常':'无异常'} ${after.issueCount} 项；${after.completeness==='partial'?'部分无结论':'分析完整'}`,snapshot:clone(current.anomalies)});
+    current.history.push({version:current.revision,author:current.lastUpdatedBy,at:current.lastUpdatedAt,summary:message||'人工调整后重新计算课堂结果',diff:`${before.anomalyStatus==='issue'?'有异常':'无异常'} ${before.issueCount} 项 → ${after.anomalyStatus==='issue'?'有异常':'无异常'} ${after.issueCount} 项；${after.completeness==='partial'?'部分分析异常':'分析完整'}`,snapshot:clone(current.anomalies)});
     ui.clueDrafts[source.id]=clone(current);
     ui.clueDrafts[source.id]._baseRevision=current.revision;
     if(anomaly)delete ui.anomalyEditor[`${draft.id}:${anomaly.id}`];
@@ -1268,7 +1268,7 @@
     if (!anomalyType) return;
     const values = ruleCriteriaValues(anomalyType, draft);
     const criteria = anomalyType.criteria || [];
-    const profile = `<section class="metric-profile-card"><h3>指标定义与适用前提</h3><dl><dt>适用场景</dt><dd>${escapeHtml(anomalyType.applicableScene || anomalyScene(anomalyType.id))}</dd><dt>分析来源</dt><dd>${escapeHtml(anomalyType.signalSource || '课堂音视频')}</dd><dt>观测窗口</dt><dd>${escapeHtml(anomalyType.observationWindow || '整节课堂')}</dd><dt>聚合方式</dt><dd>${escapeHtml(anomalyType.aggregation || '按学校规则汇总')}</dd><dt>无结论条件</dt><dd>${escapeHtml(anomalyType.unavailablePolicy || '分析所需数据不足时不输出结论')}</dd><dt>证据要求</dt><dd>${escapeHtml(anomalyType.evidenceRequirement || '保留必要时间点和来源片段')}</dd><dt>可信度规则</dt><dd>${escapeHtml(anomalyType.confidencePolicy || '达到算法门槛后再与规则比较')}</dd></dl>${anomalyType.governanceNote ? `<div class="metric-governance-note"><strong>使用注意</strong><span>${escapeHtml(anomalyType.governanceNote)}</span></div>` : ''}</section>`;
+    const profile = `<section class="metric-profile-card"><h3>指标定义与适用前提</h3><dl><dt>适用场景</dt><dd>${escapeHtml(anomalyType.applicableScene || anomalyScene(anomalyType.id))}</dd><dt>分析来源</dt><dd>${escapeHtml(anomalyType.signalSource || '课堂音视频')}</dd><dt>观测窗口</dt><dd>${escapeHtml(anomalyType.observationWindow || '整节课堂')}</dd><dt>聚合方式</dt><dd>${escapeHtml(anomalyType.aggregation || '按学校规则汇总')}</dd><dt>分析异常条件</dt><dd>${escapeHtml(anomalyType.unavailablePolicy || '分析所需数据不足时不输出结论')}</dd><dt>证据要求</dt><dd>${escapeHtml(anomalyType.evidenceRequirement || '保留必要时间点和来源片段')}</dd><dt>可信度规则</dt><dd>${escapeHtml(anomalyType.confidencePolicy || '达到算法门槛后再与规则比较')}</dd></dl>${anomalyType.governanceNote ? `<div class="metric-governance-note"><strong>使用注意</strong><span>${escapeHtml(anomalyType.governanceNote)}</span></div>` : ''}</section>`;
     const body = `<div class="rule-criteria-intro"><strong>${escapeHtml(anomalyType.label)}</strong><span>${escapeHtml(anomalyType.ruleLabel)}</span><small>每个观测条件独立判断，任一条件达到设定值即生成对应异常项。</small></div>${profile}<div class="rule-criteria-editor-list">${criteria.map((criterion) => `<div class="rule-criterion-card"><div class="rule-criterion-copy"><strong>${escapeHtml(criterion.label)}</strong><span>${escapeHtml(criterion.help)}</span></div><div class="rule-criterion-input"><span>${escapeHtml(criterion.operatorLabel)}</span><input class="control rule-criterion-value" type="number" data-criterion="${criterion.id}" value="${values[criterion.id]}" min="${criterion.min ?? 0}" max="${criterion.max ?? 9999}" step="${criterion.step ?? 1}" ${readOnly ? 'disabled' : ''}/><em>${escapeHtml(criterion.unit)}</em></div></div>`).join('')}</div>${readOnly ? '<div class="drawer-actions"><button class="btn" data-drawer-close-action>关闭</button></div>' : '<div class="drawer-actions"><button class="btn" data-drawer-close-action>取消</button><button class="btn primary" id="save-rule-criteria">保存设置</button></div>'}`;
     showDrawer(`${anomalyType.label}判定设置`, body);
     portal.querySelectorAll('[data-drawer-close-action]').forEach((el) => el.addEventListener('click', closePortal));
