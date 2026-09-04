@@ -964,7 +964,7 @@
     const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, ss.schoolId))}</div><dl class="anomaly-reading-grid"><dt>异常指标</dt><dd>${escapeHtml(anomalyType.label || '异常项')}</dd><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生时间</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>视频回看</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd></dl></div>`;
     return `<div class="anomaly-form" data-anomaly-form="${index}">
       <div class="source-line"><div>${tag(['分析异常','blue'])}</div>${readOnly?'':`<button class="text-link danger-text" id="delete-anomaly">删除异常项</button>${isEditing?'':'<button class="text-link" id="edit-anomaly">修改异常</button>'}`}</div>
-      ${isEditing?`${editFields}<div class="form-actions"><button class="btn primary" id="save-result-changes">保存本次修改</button></div>`:readOnlyDetail}
+      ${isEditing?editFields:readOnlyDetail}
     </div>`;
   }
 
@@ -1005,7 +1005,8 @@
       return `<section class="finding-category">${header}${scenes}</section>`;
     }).join('');
     const emptyCopy = `<div class="empty-state analysis-drawer-empty"><div>本节课未发现异常</div>${readOnly?'<span class="muted">当前为区域只读视图</span>':''}</div>`;
-    const body = `${readOnly ? '<div class="read-only-banner">区域管理员只可查看，不可修改或删除异常项。</div>' : '<div class="read-only-banner">可连续修改多条异常后统一确认；删除异常项会立即二次确认。</div>'}<div class="analysis-drawer-toolbar"><span class="muted">本节课共 ${visibleAnomalies.length} 项异常 · 正常 ${insight.normalMetrics} 项${insight.unavailableMetrics?` · 分析异常 ${insight.unavailableMetrics} 项`:''}</span></div><div class="finding-list analysis-drawer-list">${list}</div>${anomaly ? anomalyForm(draft, anomaly, activeIndex, ss, [], readOnly) : emptyCopy}`;
+    const batchActions = readOnly ? '' : '<div class="field" style="margin-top:16px"><label for="batch-edit-reason">修改原因（选填，最多 200 字）</label><textarea id="batch-edit-reason" class="control" maxlength="200" rows="3" placeholder="整次保存共用一个原因"></textarea></div><div class="form-actions"><button class="btn primary" id="save-all-result-changes">统一保存修改</button></div>';
+    const body = `${readOnly ? '<div class="read-only-banner">区域管理员只可查看，不可修改或删除异常项。</div>' : '<div class="read-only-banner">可连续修改多条异常后统一确认；删除异常项会立即二次确认。</div>'}<div class="analysis-drawer-toolbar"><span class="muted">本节课共 ${visibleAnomalies.length} 项异常 · 正常 ${insight.normalMetrics} 项${insight.unavailableMetrics?` · 分析异常 ${insight.unavailableMetrics} 项`:''}</span></div><div class="finding-list analysis-drawer-list">${list}</div>${anomaly ? anomalyForm(draft, anomaly, activeIndex, ss, [], readOnly) : emptyCopy}${batchActions}`;
     showDrawer(readOnly ? '查看分析结果' : '修正分析结果', body);
     portal.querySelector('[data-drawer-close]').addEventListener('click',()=>{ui.analysisDrawer[source.id]=false;});
     portal.querySelector('.drawer-mask').addEventListener('click',(event)=>{if(event.target.classList.contains('drawer-mask'))ui.analysisDrawer[source.id]=false;});
@@ -1019,6 +1020,12 @@
       portal.querySelectorAll('[data-seek-evidence]').forEach((el)=>el.addEventListener('click',()=>{const targetIndex=Number(el.dataset.seekEvidence);ui.activeAnomaly[source.id]=targetIndex;ui.detailPlayback[source.id]=draft.anomalies[targetIndex]?.occurredSecond||0;ui.analysisDrawer[source.id]=false;renderApp();}));
       return;
     }
+    document.getElementById('save-all-result-changes')?.addEventListener('click',()=>{
+      const invalid=draft.anomalies.find((item)=>!item.deleted&&!occurrenceMatchesScene(item.typeId,item.occurredSecond,ss));
+      if(invalid){toast(`${type(invalid.typeId)?.label||'当前指标'}的发生时间不在适用时段内`,'error');return;}
+      const reason=(document.getElementById('batch-edit-reason')?.value||'').trim();
+      saveAnalysisResult(source,draft,null,reason||'已统一保存异常修改');
+    });
     if(anomaly){
       portal.querySelectorAll('[data-seek-evidence]').forEach((el)=>el.addEventListener('click',()=>{const targetIndex=Number(el.dataset.seekEvidence);ui.activeAnomaly[source.id]=targetIndex;ui.detailPlayback[source.id]=draft.anomalies[targetIndex]?.occurredSecond||0;ui.analysisDrawer[source.id]=false;renderApp();}));
       document.querySelectorAll('.anomaly-input').forEach((el)=>el.addEventListener('change',()=>{
@@ -1032,13 +1039,6 @@
       }));
       const editBtn=document.getElementById('edit-anomaly');
       if(editBtn)editBtn.addEventListener('click',()=>{ui.anomalyEditor[`${draft.id}:${anomaly.id}`]=true;renderApp();});
-      const saveChanges=document.getElementById('save-result-changes');
-      if(saveChanges)saveChanges.addEventListener('click',()=>{
-        const occurredSecondInput=portal.querySelector('[data-field="occurredSecond"]');
-        if(occurredSecondInput)anomaly.occurredSecond=Number(occurredSecondInput.value);
-        if(!occurrenceMatchesScene(anomaly.typeId,anomaly.occurredSecond,ss)){toast(`${type(anomaly.typeId)?.label||'当前指标'}仅适用于${anomalyScene(anomaly.typeId)}时段，请调整发生时间`,'error');return;}
-        saveAnalysisResult(source,draft,anomaly);
-      });
       const deleteBtn=document.getElementById('delete-anomaly');
       if(deleteBtn)deleteBtn.addEventListener('click',()=>{
         if(anomaly.source==='manual'&&!clue(source.id).anomalies.some((item)=>item.id===anomaly.id)){
