@@ -14,9 +14,10 @@
     dashboardDays: 30,
     dashboardRange: { start: '', end: '' },
     dashboardCategory: 'all',
+    dashboardTypeId: 'all',
     cluePage: 1,
-    cluePageSize: 6,
-    clueFilters: { schoolId: 'all', roomId: 'all', teacherId: 'all', classId: 'all', category: 'all', typeId: 'all', anomalyStatus: 'all', completeness: 'all', days: 30, rangeStart: '', rangeEnd: '', keyword: '' },
+    cluePageSize: 20,
+    clueFilters: { schoolIds: [], roomIds: [], teacherIds: [], classIds: [], subjects: [], category: 'all', typeIds: [], anomalyStatus: 'all', completeness: 'all', days: 30, rangeStart: '', rangeEnd: '', keyword: '' },
     taskPage: 1,
     taskPageSize: 7,
     taskFilters: { schoolId: 'all', roomId: 'all', status: 'all' },
@@ -39,7 +40,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.schemaVersion === 19) {
+        if (parsed && parsed.schemaVersion === 20) {
           parsed.demoVersion = seed.DEMO_VERSION;
           return parsed;
         }
@@ -78,6 +79,7 @@
   function klass(id) { return byId(db.classes, id); }
   function session(id) { return byId(db.sessions, id); }
   function task(id) { return byId(db.tasks, id); }
+  function taskForSession(sessionId) { return db.tasks.find((item) => item.sessionId === sessionId); }
   function clue(id) { return byId(db.clues, id); }
   function availableNoticeRecipients(ss) {
     const classInfo = klass(ss.classId);
@@ -121,6 +123,8 @@
   }
   function categoryMatches(category, selected) { return selected === 'all' || (db.categoryGroups[selected]?.categoryIds || [selected]).includes(category); }
   function categoryFilterOptions(selected) { return Object.entries(db.categoryGroups).map(([id, meta]) => option(id, meta.label, selected)).join(''); }
+  function selectedValues(values) { return Array.isArray(values) ? values : values && values !== 'all' ? [values] : []; }
+  function includesSelected(values, value) { const selected = selectedValues(values); return !selected.length || selected.includes(value); }
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -364,7 +368,10 @@
     return { page: parts[0] || 'dashboard', id: parts[1] || null };
   }
 
-  function navigate(path) { location.hash = `#/${path}`; }
+  function navigate(path) {
+    location.hash = `#/${path}`;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
 
   // 侧栏及顶部操作统一使用 24px 线性图标，颜色继承父级状态（含 active / hover）。
   function icon(name, extraClass) {
@@ -396,7 +403,7 @@
         <div class="brand-area"><div class="brand-mark">三</div><div class="brand-name">三个课堂平台</div></div>
         <nav class="global-nav" aria-label="平台模块"><span class="active">首页</span><span>数据中心</span><span>名师课堂</span><span>专递课堂</span><span>名校网络课堂</span><span>教学成果</span><span>精品课</span></nav>
         <div class="top-actions">
-          <span class="demo-version-pill">演示数据 · ${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.63')}</span>
+          <span class="demo-version-pill">演示数据 · ${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.64')}</span>
           <div class="role-switch"><button data-role="school" class="${ui.role === 'school' ? 'active' : ''}">校级管理员</button><button data-role="region" class="${ui.role === 'region' ? 'active' : ''}">区域管理员</button></div>
           <button class="icon-btn" title="打开演示指南" aria-label="打开演示指南" data-action="guide">${icon('help')}</button>
           <button class="icon-btn" title="恢复演示数据" aria-label="恢复演示数据" data-action="refresh">${icon('refresh')}</button>
@@ -437,7 +444,7 @@
   }
 
   function showDemoGuide() {
-    const body = `<div class="demo-guide-intro"><span class="demo-version-pill">${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.63')}</span><div><strong>AI 巡课完整演示路径</strong><p>全部姓名、课堂和识别结果均为虚构演示数据；页面修改仅保存在当前浏览器。</p></div></div>
+    const body = `<div class="demo-guide-intro"><span class="demo-version-pill">${escapeHtml(db.demoVersion || seed.DEMO_VERSION || 'V0.64')}</span><div><strong>AI 巡课完整演示路径</strong><p>全部姓名、课堂和识别结果均为虚构演示数据；页面修改仅保存在当前浏览器。</p></div></div>
       <ol class="demo-story-list">
         <li><strong>查看总体情况</strong><span>在巡课看板查看核心数据、趋势、问题分布、排名和最新结果。</span></li>
         <li><strong>查看分析证据</strong><span>进入分析结果，按异常时间定位三画面课堂视频。</span></li>
@@ -489,32 +496,83 @@
     </div></div>`;
   }
 
+  function ruleSnapshotForSession(sessionId) {
+    const ss = session(sessionId);
+    const snapshot = taskForSession(sessionId)?.ruleSnapshot;
+    return snapshot?.enabledTypes ? snapshot : db.rules[ss?.schoolId] || { enabledTypes: {}, criteria: {} };
+  }
+
+  function dashboardPeriods(days, start, end) {
+    const rangeEnd = rangeEndDate(end);
+    const rangeStart = start ? new Date(`${start}T12:00:00`) : new Date(rangeEnd);
+    if (!start) rangeStart.setDate(rangeStart.getDate() - Math.max(0, Number(days) - 1));
+    const span = rangeSpanDays(days, start, end);
+    const periods = [];
+    if (span <= 31) {
+      const cursor = new Date(rangeStart);
+      while (cursor <= rangeEnd) {
+        const key = dateKey(cursor);
+        periods.push({ start: key, end: key, label: `${cursor.getMonth() + 1}/${cursor.getDate()}` });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return periods;
+    }
+    const cursor = new Date(rangeStart);
+    const mondayOffset = (cursor.getDay() + 6) % 7;
+    cursor.setDate(cursor.getDate() - mondayOffset);
+    while (cursor <= rangeEnd) {
+      const weekStart = new Date(Math.max(cursor.getTime(), rangeStart.getTime()));
+      const rawWeekEnd = new Date(cursor);
+      rawWeekEnd.setDate(rawWeekEnd.getDate() + 6);
+      const weekEnd = new Date(Math.min(rawWeekEnd.getTime(), rangeEnd.getTime()));
+      periods.push({
+        start: dateKey(weekStart),
+        end: dateKey(weekEnd),
+        label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}–${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`
+      });
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return periods;
+  }
+
+  function anomalyInPeriod(anomaly, period) {
+    const key = dateKey(session(anomaly.sessionId)?.startAt);
+    return key >= period.start && key <= period.end;
+  }
+
   function dashboardPage() {
     const schoolIds = currentSchoolIds();
-    const sessions = db.sessions.filter((s) => schoolIds.includes(s.schoolId) && inDateRange(s.startAt, ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end));
+    const rangedSessions = db.sessions.filter((s) => schoolIds.includes(s.schoolId) && inDateRange(s.startAt, ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end));
+    const sessionMatchesRuleScope = (ss) => {
+      if (ui.dashboardTypeId !== 'all') return ruleSnapshotForSession(ss.id).enabledTypes?.[ui.dashboardTypeId] !== false;
+      if (ui.dashboardCategory !== 'all') {
+        return db.anomalyTypes.some((item) => categoryMatches(item.category, ui.dashboardCategory) && ruleSnapshotForSession(ss.id).enabledTypes?.[item.id] !== false);
+      }
+      return true;
+    };
+    const sessions = rangedSessions.filter(sessionMatchesRuleScope);
     const sessionIds = new Set(sessions.map((s) => s.id));
-    let clues = db.clues.filter((c) => sessionIds.has(c.sessionId));
-    if (ui.dashboardCategory !== 'all') clues = clues.filter((c) => c.anomalies.some((a) => !a.deleted && categoryMatches(type(a.typeId)?.category, ui.dashboardCategory)));
-    const anomalies = clues.flatMap((c) => c.anomalies.filter((a) => !a.deleted).map((a) => ({ ...a, clueId: c.id, sessionId: c.sessionId })));
-    const abnormalClassrooms = clues.filter((item) => resultState(item).anomalyStatus === 'issue');
+    const clues = db.clues.filter((c) => sessionIds.has(c.sessionId));
+    const allScopedAnomalies = clues.flatMap((c) => c.anomalies.filter((a) => !a.deleted).map((a) => ({ ...a, clueId: c.id, sessionId: c.sessionId })));
+    const anomalies = allScopedAnomalies.filter((item) => (ui.dashboardCategory === 'all' || categoryMatches(type(item.typeId)?.category, ui.dashboardCategory)) && (ui.dashboardTypeId === 'all' || item.typeId === ui.dashboardTypeId));
+    const abnormalSessionIds = new Set(anomalies.map((item) => item.sessionId));
+    const abnormalClassrooms = clues.filter((item) => abnormalSessionIds.has(item.sessionId));
     const completed = clues;
     const isRegionSummary = ui.role === 'region' && (!ui.dashboardSchoolId || ui.dashboardSchoolId === 'all');
     const metrics = [['有视频课堂数', sessions.length, '节', false], ['已形成结果课堂数', completed.length, '节', true], ['异常课堂数', abnormalClassrooms.length, '节', true], ['当前有效异常项数', anomalies.length, '项', true]];
-    const dashboardRangeDays = rangeSpanDays(ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end);
-    const trend = Array.from({ length: Math.min(14, dashboardRangeDays) }, (_, index) => {
-      const dayOffset = Math.min(14, dashboardRangeDays) - 1 - index;
-      const labelDate = rangeEndDate(ui.dashboardRange.end); labelDate.setDate(labelDate.getDate() - dayOffset);
-      const key = fmtDate(labelDate.toISOString(), false);
-      const value = anomalies.filter((a) => fmtDate(session(a.sessionId).startAt, false) === key).length;
-      return { label: `${labelDate.getMonth()+1}/${labelDate.getDate()}`, value };
-    });
-    const classroomTrend = trend.map((item) => ({ ...item, value: unique(anomalies.filter((a) => { const d=new Date(session(a.sessionId).startAt); return `${d.getMonth()+1}/${d.getDate()}` === item.label; }).map((a) => a.sessionId)).length }));
-    const distSource = anomalies;
+    const periods = dashboardPeriods(ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end);
+    const trend = periods.map((period) => ({ label: period.label, value: anomalies.filter((item) => anomalyInPeriod(item, period)).length }));
+    const classroomTrend = periods.map((period) => ({ label: period.label, value: unique(anomalies.filter((item) => anomalyInPeriod(item, period)).map((item) => item.sessionId)).length }));
     const typeCounts = {};
-    distSource.forEach((a) => { typeCounts[a.typeId] = (typeCounts[a.typeId] || 0) + 1; });
-    const dist = Object.entries(typeCounts).sort((a,b) => b[1]-a[1]).slice(0,5).map(([id,value]) => ({ label: type(id)?.label || id, value }));
-    if (!dist.length) dist.push({ label: '暂无数据', value: 0 });
-    const teacherRanks = rankEntities(anomalies.filter((a) => a.category === 'teacher'), 'teacher');
+    const categoryCounts = {};
+    anomalies.forEach((item) => {
+      typeCounts[item.typeId] = (typeCounts[item.typeId] || 0) + 1;
+      const groupId = categoryGroupId(type(item.typeId)?.category);
+      categoryCounts[groupId] = (categoryCounts[groupId] || 0) + 1;
+    });
+    const typeDistribution = Object.entries(typeCounts).sort((a,b) => b[1]-a[1]).map(([id,value]) => ({ label: type(id)?.label || id, value }));
+    const categoryDistribution = Object.entries(categoryCounts).sort((a,b) => b[1]-a[1]).map(([id,value]) => ({ label: db.categoryGroups[id]?.label || id, value }));
+    const teacherRanks = rankEntities(anomalies, 'teacher');
     const classRanks = rankEntities(anomalies, 'class');
     const schoolOverview = schoolIds.map((schoolId) => {
       const schoolSessions = sessions.filter((s) => s.schoolId === schoolId);
@@ -527,26 +585,34 @@
         abnormalClasses: abnormalClassrooms.filter((item) => schoolSessionIds.has(item.sessionId)).length,
         anomalyCount: anomalies.filter((a) => schoolSessionIds.has(a.sessionId)).length
       };
-    }).sort((a,b) => b.anomalyCount-a.anomalyCount || b.analyzedClasses-a.analyzedClasses);
-    const focusClues = clues.slice().sort((a,b) => new Date(session(b.sessionId).startAt)-new Date(session(a.sessionId).startAt)).slice(0,10);
+    }).sort((a,b) => b.anomalyCount-a.anomalyCount);
+    let previousSchoolValue = null;
+    let currentSchoolRank = 0;
+    schoolOverview.forEach((item) => { if (item.anomalyCount !== previousSchoolValue) currentSchoolRank += 1; item.rank = currentSchoolRank; previousSchoolValue = item.anomalyCount; });
+    const focusClues = clues.filter((clue) => {
+      const activeAnomalies = clue.anomalies.filter((item) => !item.deleted);
+      return (ui.dashboardCategory === 'all' || activeAnomalies.some((item) => categoryMatches(type(item.typeId)?.category, ui.dashboardCategory)))
+        && (ui.dashboardTypeId === 'all' || activeAnomalies.some((item) => item.typeId === ui.dashboardTypeId));
+    }).sort((a,b) => new Date(session(b.sessionId).startAt)-new Date(session(a.sessionId).startAt)).slice(0,10);
     const isSchoolDrilldown = ui.role === 'region' && ui.dashboardSchoolId && ui.dashboardSchoolId !== 'all';
     const currentLabel = ui.role === 'region' ? (isSchoolDrilldown ? school(ui.dashboardSchoolId).name : '青川区区域汇总') : school(ui.schoolId).name;
     const dashboardSubtitle = isSchoolDrilldown
       ? `学校看板 · ${rangeLabel(ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end)}，按课堂开始时间统计`
       : `${escapeHtml(currentLabel)} · ${rangeLabel(ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end)}，按课堂开始时间统计`;
 
-    const rankCards = `<div class="grid-even"><div class="card"><div class="card-header"><div class="card-title">教师异常前 10</div><span class="muted">按教师课堂行为异常项总数</span></div><div class="card-body">${rankList(teacherRanks, isRegionSummary)}</div></div><div class="card"><div class="card-header"><div class="card-title">班级异常前 10</div><span class="muted">按该班课堂全部异常项总数</span></div><div class="card-body">${rankList(classRanks, isRegionSummary)}</div></div></div>`;
-    const schoolOverviewCard = isRegionSummary ? `<div class="card dashboard-school-overview"><div class="card-header"><div class="card-title">学校巡课概览</div></div><div class="school-overview"><div class="school-overview-head"><span></span><span>学校</span><span>有视频课堂</span><span>已形成结果</span><span>异常课堂 / 异常项</span></div>${schoolOverview.map((item,i) => `<button type="button" class="school-overview-row" data-school-down="${item.id}" aria-label="查看${escapeHtml(item.name)}巡课看板"><span class="rank-no">${i+1}</span><span class="school-overview-name">${escapeHtml(item.name)}<i>›</i></span><span>${item.videoClasses} 节</span><span>${item.analyzedClasses} 节</span><span class="rank-value">${item.abnormalClasses} / ${item.anomalyCount}</span></button>`).join('')}</div></div>` : '';
+    const rankCards = `<div class="grid-even"><div class="card"><div class="card-header"><div><div class="card-title">教师异常前 10</div><span class="muted">按教师课堂行为异常项总数</span></div><button class="text-link" data-view-rank="teacher">查看全部</button></div><div class="card-body">${rankList(teacherRanks.slice(0,10), isRegionSummary)}</div></div><div class="card"><div class="card-header"><div><div class="card-title">班级异常前 10</div><span class="muted">按该班课堂全部异常项总数</span></div><button class="text-link" data-view-rank="class">查看全部</button></div><div class="card-body">${rankList(classRanks.slice(0,10), isRegionSummary)}</div></div></div>`;
+    const schoolOverviewCard = isRegionSummary ? `<div class="card dashboard-school-overview"><div class="card-header"><div class="card-title">学校巡课概览</div><button class="text-link" data-view-rank="school">查看全部</button></div><div class="school-overview"><div class="school-overview-head"><span></span><span>学校</span><span>有视频课堂</span><span>已形成结果</span><span>异常课堂 / 异常项</span></div>${schoolOverview.slice(0,10).map((item) => `<button type="button" class="school-overview-row" data-school-down="${item.id}" aria-label="查看${escapeHtml(item.name)}巡课看板"><span class="rank-no">${item.rank}</span><span class="school-overview-name">${escapeHtml(item.name)}<i>›</i></span><span>${item.videoClasses} 节</span><span>${item.analyzedClasses} 节</span><span class="rank-value">${item.abnormalClasses} / ${item.anomalyCount}</span></button>`).join('')}</div></div>` : '';
     const html = `<section class="page-body">
       <div class="page-header"><div>${isSchoolDrilldown ? `<nav class="dashboard-breadcrumb" aria-label="看板层级"><button type="button" id="return-region-summary">区域汇总</button><span>／</span><strong>${escapeHtml(currentLabel)}</strong></nav>` : ''}<h1 class="page-title">巡课看板</h1><div class="page-subtitle">${dashboardSubtitle}</div></div><div class="page-actions"><span class="muted">数据更新于 ${fmtDate(seed.DEMO_NOW)}</span></div></div>
       <div class="filter-bar">
         ${ui.role === 'region' ? `<select class="control" id="dashboard-school">${option('all','区域汇总',ui.dashboardSchoolId||'all')}${db.schools.map((s) => option(s.id,s.name,ui.dashboardSchoolId)).join('')}</select>` : ''}
         ${dateRangeControl('dashboard', ui.dashboardDays, ui.dashboardRange.start, ui.dashboardRange.end)}
         <select class="control" id="dashboard-category">${option('all','全部问题',ui.dashboardCategory)}${categoryFilterOptions(ui.dashboardCategory)}</select>
+        <select class="control" id="dashboard-type">${option('all','全部指标',ui.dashboardTypeId)}${db.anomalyTypes.filter((item)=>ui.dashboardCategory==='all'||categoryMatches(item.category,ui.dashboardCategory)).map((item)=>option(item.id,item.label,ui.dashboardTypeId)).join('')}</select>
       </div>
       <div class="metrics">${metrics.map((m,i) => metricCard(m[0],m[1],m[2],['#eef4ff','#effaf4','#fff6e7','#f4efff','#fff0f1','#edf7ff'][i],m[3])).join('')}</div>
       <div class="grid-2"><div class="card"><div class="card-header"><div class="card-title">异常课堂数趋势</div></div><div class="card-body chart-box">${lineChart(classroomTrend)}</div></div><div class="card"><div class="card-header"><div class="card-title">当前有效异常项数趋势</div></div><div class="card-body chart-box">${lineChart(trend)}</div></div></div>
-      <div class="card"><div class="card-header"><div class="card-title">问题分布（一级分类与指标）</div><button class="text-link" data-down-clues>查看明细</button></div><div class="card-body chart-box">${donut(dist)}</div></div>
+      <div class="card dashboard-distribution-card"><div class="card-header"><div class="card-title">问题分布（一级分类与指标）</div><button class="text-link" data-down-clues>查看明细</button></div>${anomalies.length ? `<div class="card-body distribution-grid"><section><h3>一级分类</h3>${donut(categoryDistribution)}</section><section><h3>具体指标</h3>${donut(typeDistribution)}</section></div>` : '<div class="empty-state"><div>当前筛选范围内暂无异常分布</div></div>'}</div>
       ${schoolOverviewCard}
       ${rankCards}
       <div class="card"><div class="card-header"><div class="card-title">最新分析结果</div><button class="text-link" id="view-all-clues">查看全部</button></div>${focusClues.length ? dashboardClueTable(focusClues) : '<div class="empty-state"><div class="empty-icon">□</div><div>当前筛选范围内暂无巡课数据</div></div>'}</div>
@@ -555,7 +621,8 @@
       const bindChange = (id, fn) => { const el=document.getElementById(id); if(el) el.addEventListener('change', () => { fn(el.value); renderApp(); }); };
       bindChange('dashboard-school', (v) => { ui.dashboardSchoolId=v; });
       bindDateRangeControl('dashboard', ({ days, start, end }) => { ui.dashboardDays=days; ui.dashboardRange={ start, end }; renderApp(); });
-      bindChange('dashboard-category', (v) => { ui.dashboardCategory=v; });
+      bindChange('dashboard-category', (v) => { ui.dashboardCategory=v; ui.dashboardTypeId='all'; });
+      bindChange('dashboard-type', (v) => { ui.dashboardTypeId=v; });
       const openDashboardClues = () => { applyDashboardClueContext(); navigate('clues'); };
       document.querySelectorAll('[data-down-clues]').forEach((el) => {
         el.addEventListener('click', openDashboardClues);
@@ -564,6 +631,11 @@
       document.querySelectorAll('[data-clue-row]').forEach((el) => el.addEventListener('click', () => navigate(`clues/${el.dataset.clueRow}`)));
       document.querySelectorAll('[data-focus-clue]').forEach((el) => el.addEventListener('click', () => navigate(`clues/${el.dataset.focusClue}`)));
       document.querySelectorAll('[data-school-down]').forEach((el) => el.addEventListener('click', () => { ui.dashboardSchoolId=el.dataset.schoolDown; renderApp(); window.scrollTo({top:0,behavior:'smooth'}); }));
+      document.querySelectorAll('[data-view-rank]').forEach((el) => el.addEventListener('click', () => {
+        const mode = el.dataset.viewRank;
+        if (mode === 'school') showSchoolRankDrawer(schoolOverview);
+        else showRankDrawer(mode, mode === 'teacher' ? teacherRanks : classRanks, isRegionSummary);
+      }));
       document.getElementById('return-region-summary')?.addEventListener('click', () => { ui.dashboardSchoolId='all'; renderApp(); window.scrollTo({top:0,behavior:'smooth'}); });
       document.getElementById('view-all-clues').addEventListener('click', () => { applyDashboardClueContext(); navigate('clues'); });
     }};
@@ -588,37 +660,55 @@
   }
 
   function applyDashboardClueContext() {
-    ui.clueFilters.schoolId = ui.role === 'region' ? (ui.dashboardSchoolId || 'all') : ui.schoolId;
+    ui.clueFilters.schoolIds = ui.role === 'region' && ui.dashboardSchoolId && ui.dashboardSchoolId !== 'all' ? [ui.dashboardSchoolId] : [];
     ui.clueFilters.category = ui.dashboardCategory;
+    ui.clueFilters.typeIds = ui.dashboardTypeId === 'all' ? [] : [ui.dashboardTypeId];
     ui.cluePage = 1;
   }
 
   function rankEntities(anomalies, mode) {
-    const counts = {};
-    anomalies.forEach((a) => {
-      const id = mode === 'teacher' ? a.teacherId : session(a.sessionId)?.classId;
-      if (id) counts[id] = (counts[id] || 0) + 1;
+    const groups = {};
+    anomalies.forEach((item) => {
+      const ss = session(item.sessionId);
+      const id = mode === 'teacher' ? ss?.teacherId : ss?.classId;
+      if (!id) return;
+      if (!groups[id]) groups[id] = { sessions: new Set(), teacherIssues: 0, studentIssues: 0 };
+      groups[id].sessions.add(item.sessionId);
+      if (categoryMatches(type(item.typeId)?.category, 'teacher')) groups[id].teacherIssues += 1;
+      else groups[id].studentIssues += 1;
     });
-    return Object.entries(counts).map(([id,value]) => {
+    return Object.entries(groups).map(([id, counts]) => {
       const entity = mode === 'teacher' ? person(id) : klass(id);
-      return { id, name: entity?.name, schoolName: entity?.schoolId ? school(entity.schoolId)?.name : '', value };
-    }).sort((a,b)=>b.value-a.value).slice(0,10);
+      const value = mode === 'teacher' ? counts.teacherIssues : counts.teacherIssues + counts.studentIssues;
+      return { id, name: entity?.name, schoolName: entity?.schoolId ? school(entity.schoolId)?.name : '', value, abnormalClasses: counts.sessions.size, teacherIssues: counts.teacherIssues, studentIssues: counts.studentIssues };
+    }).filter((item) => item.value > 0).sort((a,b)=>b.value-a.value || String(a.name).localeCompare(String(b.name), 'zh-CN'));
   }
 
   function rankList(items, showSchool) {
     if (!items.length) return '<div class="empty-state" style="min-height:180px"><div>暂无排名数据</div></div>';
-    let previousValue=null; let previousRank=0;
-    return `<div class="school-rank">${items.map((r,i) => { const rank=r.value===previousValue?previousRank:i+1; previousValue=r.value; previousRank=rank; return `<div class="rank-row ${showSchool?'rank-row-with-school':''}" data-rank-id="${r.id}"><span class="rank-no">${rank}</span><span class="rank-entity"><strong>${escapeHtml(r.name)}</strong>${showSchool?`<small>${escapeHtml(r.schoolName)}</small>`:''}</span><span class="rank-value">${r.value} 项</span></div>`; }).join('')}</div>`;
+    let previousValue=null; let currentRank=0;
+    return `<div class="school-rank rank-table"><div class="rank-table-head"><span>名次</span><span>对象</span><span>异常课堂</span><span>教师异常</span><span>学生异常</span></div>${items.map((r) => { if (r.value !== previousValue) currentRank += 1; previousValue=r.value; return `<div class="rank-row ${showSchool?'rank-row-with-school':''}" data-rank-id="${r.id}"><span class="rank-no">${currentRank}</span><span class="rank-entity"><strong>${escapeHtml(r.name)}</strong>${showSchool?`<small>${escapeHtml(r.schoolName)}</small>`:''}</span><span>${r.abnormalClasses} 节</span><span>${r.teacherIssues} 项</span><span>${r.studentIssues} 项</span></div>`; }).join('')}</div>`;
+  }
+
+  function showRankDrawer(mode, items, showSchool) {
+    const label = mode === 'teacher' ? '教师' : '班级';
+    const body = `<div class="read-only-banner">沿用当前看板的日期、学校、分类和指标筛选。</div><div class="rank-drawer-list">${rankList(items, showSchool)}</div>`;
+    showDrawer(`${label}异常排名`, body);
+  }
+
+  function showSchoolRankDrawer(items) {
+    const body = `<div class="read-only-banner">按当前有效异常项数排序，常显四项课堂数据。</div><div class="school-rank-drawer"><div class="school-overview-head"><span>名次</span><span>学校</span><span>有视频课堂</span><span>已形成结果</span><span>异常课堂 / 异常项</span></div>${items.map((item)=>`<div class="school-overview-row static"><span class="rank-no">${item.rank}</span><span>${escapeHtml(item.name)}</span><span>${item.videoClasses} 节</span><span>${item.analyzedClasses} 节</span><span>${item.abnormalClasses} / ${item.anomalyCount}</span></div>`).join('')}</div>`;
+    showDrawer('学校巡课排名', body);
   }
 
   function dashboardClueTable(items) {
-    return `<div class="table-wrap" style="border:0;border-radius:0"><table class="analysis-result-table dashboard-result-table"><thead><tr><th>课堂时间</th>${ui.role==='region'?'<th>学校</th>':''}<th>教师</th><th>班级</th><th>异常状态</th><th>分析完整性</th><th>分析结果</th><th>操作</th></tr></thead><tbody>${items.map((c) => clueRow(c)).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap" style="border:0;border-radius:0"><table class="analysis-result-table dashboard-result-table"><thead><tr><th>课堂时间</th>${ui.role==='region'?'<th>学校</th>':''}<th>教师 / 学科</th><th>班级 / 教室</th><th>异常状态</th><th>分析完整性</th><th>分析结果</th><th>操作</th></tr></thead><tbody>${items.map((c) => clueRow(c)).join('')}</tbody></table></div>`;
   }
 
   function clueListPage() {
     const filterSchoolIds = ui.role === 'school'
       ? [ui.schoolId]
-      : ui.clueFilters.schoolId !== 'all' ? [ui.clueFilters.schoolId] : db.schools.map((s) => s.id);
+      : selectedValues(ui.clueFilters.schoolIds).length ? selectedValues(ui.clueFilters.schoolIds) : db.schools.map((s) => s.id);
     let items = db.clues.filter((c) => filterSchoolIds.includes(session(c.sessionId).schoolId));
     const f = ui.clueFilters;
     items = items.filter((c) => {
@@ -628,11 +718,12 @@
       const anomalyTypes = unique(activeAnomalies.map((a) => a.typeId));
       const state = resultState(c);
       const keywordText = [person(ss.teacherId)?.name, klass(ss.classId)?.name, room(ss.roomId)?.name].join('');
-      return (f.roomId === 'all' || ss.roomId === f.roomId)
-        && (f.teacherId === 'all' || ss.teacherId === f.teacherId || anomalyPeople.includes(f.teacherId))
-        && (f.classId === 'all' || ss.classId === f.classId)
+      return includesSelected(f.roomIds, ss.roomId)
+        && (!selectedValues(f.teacherIds).length || selectedValues(f.teacherIds).some((id) => ss.teacherId === id || anomalyPeople.includes(id)))
+        && includesSelected(f.classIds, ss.classId)
+        && includesSelected(f.subjects, ss.subject)
         && (f.category === 'all' || activeAnomalies.some((item) => categoryMatches(type(item.typeId)?.category, f.category)))
-        && (f.typeId === 'all' || anomalyTypes.includes(f.typeId))
+        && (!selectedValues(f.typeIds).length || selectedValues(f.typeIds).some((id) => anomalyTypes.includes(id)))
         && (f.anomalyStatus === 'all' || state.anomalyStatus === f.anomalyStatus)
         && (f.completeness === 'all' || state.completeness === f.completeness)
         && inDateRange(ss.startAt, f.days, f.rangeStart, f.rangeEnd)
@@ -644,22 +735,24 @@
     if (ui.cluePage > pages) ui.cluePage = pages;
     const pageItems = items.slice((ui.cluePage - 1) * ui.cluePageSize, ui.cluePage * ui.cluePageSize);
     const scopedSchools = ui.role === 'school' ? db.schools.filter((s) => s.id === ui.schoolId) : db.schools;
-    const availableRooms = db.rooms.filter((r) => filterSchoolIds.includes(r.schoolId));
-    const availableClasses = db.classes.filter((c) => filterSchoolIds.includes(c.schoolId));
-    const availablePeople = db.people.filter((p) => p.schoolId && filterSchoolIds.includes(p.schoolId));
-    const activeFilterCount = Object.entries(f).filter(([key,value]) => !['keyword','days','rangeStart','rangeEnd'].includes(key) && value !== 'all').length + ((f.rangeStart && f.rangeEnd) || Number(f.days) !== 30 ? 1 : 0);
+    const optionSchoolIds = ui.role === 'school' ? [ui.schoolId] : db.schools.map((item)=>item.id);
+    const availableRooms = db.rooms.filter((r) => optionSchoolIds.includes(r.schoolId));
+    const availableClasses = db.classes.filter((c) => optionSchoolIds.includes(c.schoolId));
+    const availablePeople = db.people.filter((p) => p.schoolId && optionSchoolIds.includes(p.schoolId));
+    const availableSubjects = unique(db.sessions.filter((item)=>optionSchoolIds.includes(item.schoolId)).map((item)=>item.subject));
+    const activeFilterCount = ['schoolIds','roomIds','teacherIds','classIds','subjects','typeIds'].filter((key)=>selectedValues(f[key]).length).length + ['category','anomalyStatus','completeness'].filter((key)=>f[key] !== 'all').length + ((f.rangeStart && f.rangeEnd) || Number(f.days) !== 30 ? 1 : 0);
     const html = `<section class="page-body">
       <div class="page-header"><div class="result-title-row"><h1 class="page-title">分析结果</h1><span class="result-count-inline">${total}</span></div><div class="page-actions"><button class="btn" id="export-results">导出</button><button class="btn" id="export-records">导出记录</button></div></div>
       <div class="filter-toolbar">
         <div class="search"><input class="control" id="clue-keyword" value="${escapeHtml(f.keyword)}" placeholder="搜索教师、班级或教室" /></div>
-        ${ui.role === 'region' ? `<select class="control" id="clue-quick-school">${option('all','全部学校',f.schoolId)}${scopedSchools.map((s)=>option(s.id,s.name,f.schoolId)).join('')}</select>` : ''}
+        ${ui.role === 'region' ? `<select class="control" id="clue-quick-school">${option('all','全部学校',selectedValues(f.schoolIds).length===1?f.schoolIds[0]:'all')}${scopedSchools.map((s)=>option(s.id,s.name,selectedValues(f.schoolIds).length===1?f.schoolIds[0]:'all')).join('')}</select>` : ''}
         ${dateRangeControl('clues', f.days, f.rangeStart, f.rangeEnd)}
         <select class="control" id="clue-quick-category">${option('all','全部问题',f.category)}${categoryFilterOptions(f.category)}</select>
         <select class="control" id="clue-anomaly-status">${option('all','全部异常状态',f.anomalyStatus)}${option('issue','有异常',f.anomalyStatus)}${option('none','无异常',f.anomalyStatus)}</select>
         <select class="control" id="clue-completeness">${option('all','全部完整性',f.completeness)}${option('complete','分析完整',f.completeness)}${option('partial','部分分析异常',f.completeness)}</select>
         <button class="btn" id="open-clue-filters" aria-label="打开筛选条件">筛选${activeFilterCount ? `<span class="filter-badge">${activeFilterCount}</span>` : ''}</button>
       </div>
-      ${pageItems.length ? `<div class="table-wrap"><table class="analysis-result-table"><thead><tr><th>课堂时间</th>${ui.role==='region'?'<th>学校</th>':''}<th>教师</th><th>班级</th><th>异常状态</th><th>分析完整性</th><th>分析结果</th><th>操作</th></tr></thead><tbody>
+      ${pageItems.length ? `<div class="table-wrap"><table class="analysis-result-table"><thead><tr><th>课堂时间</th>${ui.role==='region'?'<th>学校</th>':''}<th>教师 / 学科</th><th>班级 / 教室</th><th>异常状态</th><th>分析完整性</th><th>分析结果</th><th>操作</th></tr></thead><tbody>
         ${pageItems.map((c) => clueRow(c)).join('')}</tbody></table></div>` : '<div class="card empty-state"><div class="empty-icon">□</div><div>当前筛选条件下暂无分析结果</div></div>'}
       <div class="pagination"><span class="result-count">共 ${total} 条</span><select class="control" id="clue-page-size">${[20,50,100].map((size)=>option(String(size),`${size} 条/页`,String(ui.cluePageSize))).join('')}</select><button class="page-btn" aria-label="上一页" title="上一页" data-page="${ui.cluePage-1}" ${ui.cluePage===1?'disabled':''}>‹</button>${Array.from({length:pages},(_,i)=>`<button class="page-btn ${ui.cluePage===i+1?'active':''}" aria-label="第 ${i+1} 页" ${ui.cluePage===i+1?'aria-current="page"':''} data-page="${i+1}">${i+1}</button>`).join('')}<button class="page-btn" aria-label="下一页" title="下一页" data-page="${ui.cluePage+1}" ${ui.cluePage===pages?'disabled':''}>›</button></div>
     </section>`;
@@ -667,54 +760,134 @@
       const search = () => { ui.clueFilters.keyword=document.getElementById('clue-keyword').value.trim(); ui.cluePage=1; renderApp(); };
       document.getElementById('clue-keyword').addEventListener('keydown', (e) => { if(e.key==='Enter') search(); });
       const updateQuickFilter = (id, update) => { document.getElementById(id)?.addEventListener('change', (event) => { update(event.target.value); ui.cluePage=1; renderApp(); }); };
-      updateQuickFilter('clue-quick-school', (value) => { ui.clueFilters.schoolId=value; ui.clueFilters.roomId='all'; ui.clueFilters.teacherId='all'; ui.clueFilters.classId='all'; });
+      updateQuickFilter('clue-quick-school', (value) => { ui.clueFilters.schoolIds=value==='all'?[]:[value]; ui.clueFilters.roomIds=[]; ui.clueFilters.teacherIds=[]; ui.clueFilters.classIds=[]; });
       bindDateRangeControl('clues', ({ days, start, end }) => { ui.clueFilters.days=days; ui.clueFilters.rangeStart=start; ui.clueFilters.rangeEnd=end; ui.cluePage=1; renderApp(); });
-      updateQuickFilter('clue-quick-category', (value) => { ui.clueFilters.category=value; ui.clueFilters.typeId='all'; });
+      updateQuickFilter('clue-quick-category', (value) => { ui.clueFilters.category=value; ui.clueFilters.typeIds=[]; });
       updateQuickFilter('clue-anomaly-status', (value) => { ui.clueFilters.anomalyStatus=value; });
       updateQuickFilter('clue-completeness', (value) => { ui.clueFilters.completeness=value; });
       document.getElementById('clue-page-size')?.addEventListener('change',(event)=>{ui.cluePageSize=Number(event.target.value);ui.cluePage=1;renderApp();});
-      document.getElementById('export-results')?.addEventListener('click',()=>toast('导出任务已创建，可在导出记录中查看'));
-      document.getElementById('export-records')?.addEventListener('click',()=>showDrawer('导出记录','<div class="read-only-banner">仅展示本人发起的任务；文件保留 14 天，到期后从列表删除。</div><div class="empty-state"><div>暂无导出记录</div></div>'));
-      document.getElementById('open-clue-filters').addEventListener('click', () => showClueFilterDrawer({ f, scopedSchools, availableRooms, availablePeople, availableClasses }));
+      document.getElementById('export-results')?.addEventListener('click',()=>createExportRecord(items));
+      document.getElementById('export-records')?.addEventListener('click',showExportRecordsDrawer);
+      document.getElementById('open-clue-filters').addEventListener('click', () => showClueFilterDrawer({ f, scopedSchools, availableRooms, availablePeople, availableClasses, availableSubjects }));
       document.querySelectorAll('[data-clue-row]').forEach((el)=>el.addEventListener('click',(event)=>{ if(!event.target.closest('button')) navigate(`clues/${el.dataset.clueRow}`); }));
       document.querySelectorAll('[data-clue-open]').forEach((el)=>el.addEventListener('click',(event)=>{ event.stopPropagation(); navigate(`clues/${el.dataset.clueOpen}`); }));
       document.querySelectorAll('[data-page]').forEach((el)=>el.addEventListener('click',()=>{ const p=Number(el.dataset.page); if(p>=1&&p<=pages){ui.cluePage=p;renderApp();} }));
     }};
   }
 
-  function showClueFilterDrawer({ f, scopedSchools, availableRooms, availablePeople, availableClasses }) {
-    const filterField = (key, label, optionsHtml) => `<div class="field"><label>${label}</label><select class="control clue-drawer-filter" data-key="${key}">${optionsHtml}</select></div>`;
-    const body = `<div class="filter-drawer-grid">
-      ${filterField('roomId','教室',`${option('all','全部教室',f.roomId)}${availableRooms.map((r)=>option(r.id,r.name,f.roomId)).join('')}`)}
-      ${filterField('teacherId','教师',`${option('all','全部教师',f.teacherId)}${availablePeople.map((p)=>option(p.id,p.name,f.teacherId)).join('')}`)}
-      ${filterField('classId','班级',`${option('all','全部班级',f.classId)}${availableClasses.map((c)=>option(c.id,c.name,f.classId)).join('')}`)}
-      ${filterField('typeId','异常类型',`${option('all','全部异常类型',f.typeId)}${db.anomalyTypes.filter((t)=>categoryMatches(t.category,f.category)).map((t)=>option(t.id,t.label,f.typeId)).join('')}`)}
-    </div><div class="drawer-actions"><button class="btn primary" id="apply-clue-filters">应用筛选</button></div>`;
+  function multiFilterField(key, label, items, selected) {
+    const selectedSet = new Set(selectedValues(selected));
+    return `<section class="multi-filter-field" data-multi-filter="${key}"><div class="multi-filter-heading"><strong>${escapeHtml(label)}</strong><span>${selectedSet.size ? `已选 ${selectedSet.size} 项` : '全部'}</span></div><div class="search multi-filter-search"><input class="control" placeholder="搜索${escapeHtml(label)}" aria-label="搜索${escapeHtml(label)}选项" /></div><div class="multi-filter-options">${items.map((item)=>{const value=typeof item==='string'?item:item.id;const text=typeof item==='string'?item:item.name||item.label;return `<label data-option-text="${escapeHtml(String(text).toLowerCase())}"><input type="checkbox" value="${escapeHtml(value)}" ${selectedSet.has(value)?'checked':''}/><span>${escapeHtml(text)}</span></label>`;}).join('')}</div></section>`;
+  }
+
+  function showClueFilterDrawer({ f, scopedSchools, availableRooms, availablePeople, availableClasses, availableSubjects }) {
+    const body = `<div class="filter-drawer-grid multi-filter-grid">
+      ${ui.role==='region'?multiFilterField('schoolIds','学校',scopedSchools,f.schoolIds):''}
+      ${multiFilterField('teacherIds','教师',availablePeople,f.teacherIds)}
+      ${multiFilterField('classIds','班级',availableClasses,f.classIds)}
+      ${multiFilterField('roomIds','教室',availableRooms,f.roomIds)}
+      ${multiFilterField('subjects','学科',availableSubjects,f.subjects)}
+      ${multiFilterField('typeIds','指标',db.anomalyTypes.filter((item)=>categoryMatches(item.category,f.category)),f.typeIds)}
+    </div><div class="drawer-actions filter-drawer-actions"><button class="btn" id="reset-clue-filters">重置</button><button class="btn primary" id="apply-clue-filters">应用筛选</button></div>`;
     showDrawer('筛选分析结果', body);
-    enhanceSelects();
+    portal.querySelectorAll('.multi-filter-field').forEach((field) => {
+      const input = field.querySelector('.multi-filter-search input');
+      input.addEventListener('input', () => {
+        const keyword = input.value.trim().toLowerCase();
+        field.querySelectorAll('.multi-filter-options label').forEach((item) => { item.hidden = Boolean(keyword) && !item.dataset.optionText.includes(keyword); });
+      });
+    });
     portal.querySelector('#apply-clue-filters').addEventListener('click', () => {
       const next = { ...ui.clueFilters };
-      portal.querySelectorAll('.clue-drawer-filter').forEach((el) => { next[el.dataset.key] = el.value; });
-      if (next.category !== f.category) next.typeId = 'all';
-      if (next.schoolId !== ui.clueFilters.schoolId) { next.roomId='all'; next.teacherId='all'; next.classId='all'; }
+      portal.querySelectorAll('[data-multi-filter]').forEach((field) => { next[field.dataset.multiFilter]=Array.from(field.querySelectorAll('input[type="checkbox"]:checked')).map((item)=>item.value); });
       ui.clueFilters = next; ui.cluePage = 1; portal.innerHTML = ''; renderApp();
     });
+    portal.querySelector('#reset-clue-filters').addEventListener('click', () => {
+      ui.clueFilters = { schoolIds: [], roomIds: [], teacherIds: [], classIds: [], subjects: [], category: 'all', typeIds: [], anomalyStatus: 'all', completeness: 'all', days: 30, rangeStart: '', rangeEnd: '', keyword: '' };
+      ui.cluePage = 1; portal.innerHTML = ''; renderApp();
+    });
+  }
+
+  function analysisResultData(c) {
+    const labels = unique(c.anomalies.filter((item)=>!item.deleted).map((item)=>type(item.typeId)?.label || '异常项'));
+    const failures = (task(c.taskId)?.failures || []).filter((item)=>item.typeId && item.typeId!=='all');
+    return { labels, failures };
+  }
+
+  function analysisResultMarkup(c) {
+    const { labels, failures } = analysisResultData(c);
+    const allLabels = labels.join('、');
+    const direct = labels.slice(0,2);
+    const issueMarkup = direct.length ? `<span class="analysis-result-issues" title="${escapeHtml(allLabels)}">${direct.map(escapeHtml).join('、')}${labels.length>2?`<em>其余 ${labels.length-2} 项</em>`:''}</span>` : '';
+    const failureTitle = failures.map((item)=>`${type(item.typeId)?.label||item.typeId}：${item.reason||'分析异常'}`).join('；');
+    const failureMarkup = failures.length ? `<span class="analysis-result-failure" title="${escapeHtml(failureTitle)}">分析异常</span>` : '';
+    if (!issueMarkup && !failureMarkup) return '<span class="analysis-result-normal">未发现异常</span>';
+    return `<div class="analysis-result-summary">${issueMarkup}${failureMarkup}</div>`;
   }
 
   function clueRow(c) {
     const ss=session(c.sessionId); const state=resultState(c);
-    const summary=state.issueCount?`${state.issueCount} 项需关注`:'未发现异常';
-    const summaryDetail=`${summary}${state.unavailableCount?` · ${state.unavailableCount} 项分析异常`:''}`;
     return `<tr class="clickable" data-clue-row="${c.id}">
-      <td title="${fmtDate(ss.startAt)}">${fmtDate(ss.startAt)}</td>
+      <td class="class-time-cell" title="${fmtDate(ss.startAt)}"><span>${fmtDate(ss.startAt,false)}</span><small>${fmtDate(ss.startAt).slice(11)}</small></td>
       ${ui.role==='region'?`<td title="${escapeHtml(school(ss.schoolId).name)}">${escapeHtml(school(ss.schoolId).name)}</td>`:''}
-      <td title="${escapeHtml(person(ss.teacherId)?.name||'—')}">${escapeHtml(person(ss.teacherId)?.name||'—')}</td>
-      <td title="${escapeHtml(klass(ss.classId)?.name||'—')}">${escapeHtml(klass(ss.classId)?.name||'—')}</td>
+      <td class="stacked-cell teacher-subject-cell" title="${escapeHtml(`${person(ss.teacherId)?.name||'—'} / ${ss.subject||'—'}`)}"><span>${escapeHtml(person(ss.teacherId)?.name||'—')}</span><small>${escapeHtml(ss.subject||'—')}</small></td>
+      <td class="stacked-cell class-room-cell" title="${escapeHtml(`${klass(ss.classId)?.name||'—'} / ${room(ss.roomId)?.name||'—'}`)}"><span>${escapeHtml(klass(ss.classId)?.name||'—')}</span><small>${escapeHtml(room(ss.roomId)?.name||'—')}</small></td>
       <td>${tag([state.anomalyStatus==='issue'?'有异常':'无异常',state.anomalyStatus==='issue'?'red':'green'])}</td>
       <td>${tag([state.completeness==='partial'?'部分分析异常':'分析完整',state.completeness==='partial'?'orange':'blue'])}</td>
-      <td title="${escapeHtml(summaryDetail)}">${escapeHtml(summaryDetail)}</td>
+      <td>${analysisResultMarkup(c)}</td>
       <td class="table-action-cell"><button class="text-link table-action-link" data-clue-open="${c.id}">查看结果</button></td>
     </tr>`;
+  }
+
+  function exportSnapshotRows(items) {
+    return items.map((c) => {
+      const ss = session(c.sessionId);
+      const result = analysisResultData(c);
+      return {
+        课堂时间: fmtDate(ss.startAt), 学校: school(ss.schoolId)?.name || '—', 教师: person(ss.teacherId)?.name || '—', 班级: klass(ss.classId)?.name || '—',
+        教室: room(ss.roomId)?.name || '—', 学科: ss.subject || '—', 异常状态: result.labels.length ? '有异常' : '无异常',
+        分析完整性: result.failures.length ? '部分分析异常' : '分析完整',
+        分析结果: [...result.labels, ...result.failures.map((item)=>`分析异常：${type(item.typeId)?.label||item.typeId}`)].join('\n') || '未发现异常'
+      };
+    });
+  }
+
+  function createExportRecord(items) {
+    const now = new Date(seed.DEMO_NOW);
+    const expires = new Date(now); expires.setDate(expires.getDate() + 14);
+    const record = {
+      id: `export-${Date.now()}`, userId: currentUserId(), fileName: `${ui.role==='region'?'青川区':'AI巡课'}分析结果_${dateKey(now).replaceAll('-','')}.xls`,
+      createdAt: now.toISOString(), status: 'generating', expiresAt: '', snapshot: exportSnapshotRows(items)
+    };
+    db.exportRecords = [record, ...(db.exportRecords || [])];
+    saveDB();
+    toast('导出任务已创建，可在导出记录中查看');
+    setTimeout(() => {
+      const current = (db.exportRecords || []).find((item)=>item.id===record.id);
+      if (!current) return;
+      current.status='ready'; current.expiresAt=expires.toISOString(); saveDB();
+      if (portal.querySelector('.drawer-title')?.textContent === '导出记录') showExportRecordsDrawer();
+      toast('导出文件已生成');
+    }, 1200);
+  }
+
+  function showExportRecordsDrawer() {
+    const records = (db.exportRecords || []).filter((item)=>item.userId===currentUserId());
+    const rows = records.map((item)=>`<tr><td title="${escapeHtml(item.fileName)}">${escapeHtml(item.fileName)}</td><td>${fmtDate(item.createdAt)}</td><td>${tag([item.status==='ready'?'可下载':item.status==='failed'?'失败':'生成中',item.status==='ready'?'green':item.status==='failed'?'red':'blue'])}</td><td>${item.expiresAt?fmtDate(item.expiresAt):'—'}</td><td>${item.status==='ready'?`<button class="text-link" data-export-download="${item.id}">下载</button>`:'—'}</td></tr>`).join('');
+    const body = `<div class="read-only-banner">仅展示本人发起的任务；文件保留 14 天，到期后从列表删除。</div>${rows?`<div class="table-wrap export-record-table"><table><thead><tr><th>文件名</th><th>发起时间</th><th>状态</th><th>过期时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty-state"><div>暂无导出记录</div></div>'}`;
+    showDrawer('导出记录', body);
+    portal.querySelectorAll('[data-export-download]').forEach((el)=>el.addEventListener('click',()=>downloadExportRecord(el.dataset.exportDownload)));
+  }
+
+  function downloadExportRecord(id) {
+    const record = (db.exportRecords || []).find((item)=>item.id===id && item.userId===currentUserId() && item.status==='ready');
+    if (!record) { toast('当前文件不可下载','warning'); return; }
+    const scopedItems = ui.role==='school' ? db.clues.filter((item)=>session(item.sessionId)?.schoolId===ui.schoolId) : db.clues;
+    const rows = record.snapshot?.length ? record.snapshot : exportSnapshotRows(scopedItems);
+    const columns = ['课堂时间','学校','教师','班级','教室','学科','异常状态','分析完整性','分析结果'];
+    const html = `<html><head><meta charset="utf-8"></head><body><table><thead><tr>${columns.map((key)=>`<th>${key}</th>`).join('')}</tr></thead><tbody>${rows.map((row)=>`<tr>${columns.map((key)=>`<td>${escapeHtml(row[key]).replaceAll('\n','<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+    const url = URL.createObjectURL(new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'}));
+    const link = document.createElement('a'); link.href=url; link.download=record.fileName; link.click(); setTimeout(()=>URL.revokeObjectURL(url),0);
   }
 
   function getClueDraft(id) {
@@ -786,8 +959,9 @@
     const participationValues = [58, 61, 66, 70, 74, participation - 1, participation - 3, participation + 2, participation];
     const visible = draft.anomalies.filter((item) => !item.deleted);
     const issueTypeIds = unique(visible.map((item) => item.typeId));
-    const enabledTypes = db.anomalyTypes.filter((item) => db.rules[ss.schoolId]?.enabledTypes?.[item.id] !== false);
     const sourceTask = task(source.taskId);
+    const snapshot = sourceTask?.ruleSnapshot?.enabledTypes ? sourceTask.ruleSnapshot : db.rules[ss.schoolId];
+    const enabledTypes = db.anomalyTypes.filter((item) => snapshot?.enabledTypes?.[item.id] !== false);
     const unavailableReasons = Object.fromEntries((sourceTask?.failures || []).filter((item) => item.typeId && item.typeId !== 'all').map((item) => [item.typeId, item.reason]));
     const statusByType = Object.fromEntries(enabledTypes.map((item) => {
       if (issueTypeIds.includes(item.id)) return [item.id, { state: 'issue' }];
@@ -802,6 +976,7 @@
       issueTypeIds,
       enabledTypes,
       statusByType,
+      ruleSnapshot: snapshot,
       totalMetrics,
       normalMetrics: enabledTypes.filter((item) => statusByType[item.id].state === 'normal').length,
       unavailableMetrics: enabledTypes.filter((item) => statusByType[item.id].state === 'unavailable').length
@@ -811,7 +986,7 @@
   function behaviorPortrait(source, draft, ss) {
     const insight = lessonInsightData(source, draft, ss);
     const groupDetails = Object.entries(db.categoryGroups).map(([groupId, group]) => {
-      const groupTypes = db.anomalyTypes.filter((item) => categoryMatches(item.category, groupId) && db.rules[ss.schoolId]?.enabledTypes?.[item.id] !== false);
+      const groupTypes = insight.enabledTypes.filter((item) => categoryMatches(item.category, groupId));
       const groupAnomalies = insight.visible.filter((item) => categoryMatches(type(item.typeId)?.category, groupId));
       const groupIssueTypes = unique(groupAnomalies.map((item) => item.typeId));
       const normalTypes = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'normal');
@@ -876,10 +1051,10 @@
     return { camera: cameraNames[evidence.camera] || '课堂画面', range: `${fmtClock(evidence.start)}–${fmtClock(evidence.end)}` };
   }
 
-  function anomalyRuleLabel(anomaly, schoolId) {
+  function anomalyRuleLabel(anomaly, rule) {
     const anomalyType = type(anomaly.typeId);
     if (!anomalyType) return '按学校巡课规则识别';
-    return `判定定义：${ruleCriteriaSummary(anomalyType, db.rules[schoolId])}`;
+    return `判定定义：${ruleCriteriaSummary(anomalyType, rule)}`;
   }
 
   function ruleCriteriaValues(anomalyType, rule) {
@@ -954,14 +1129,15 @@
     const isTeacher = a.category === 'teacher';
     const editorKey=`${draft.id}:${a.id}`;
     const isEditing=!readOnly&&(a.source==='manual'||Boolean(ui.anomalyEditor[editorKey]));
+    const snapshot = task(draft.taskId)?.ruleSnapshot?.enabledTypes ? task(draft.taskId).ruleSnapshot : db.rules[ss.schoolId];
     const editFields=`<div class="form-grid anomaly-edit-fields">
-      <div class="field wide"><label>异常类型 *</label><select class="control anomaly-input" data-field="typeId">${db.anomalyTypes.filter((t)=>t.category===a.category).map((t)=>option(t.id,t.label,a.typeId)).join('')}</select></div>
+      <div class="field wide"><label>异常类型 *</label><select class="control anomaly-input" data-field="typeId">${db.anomalyTypes.filter((t)=>t.category===a.category&&snapshot?.enabledTypes?.[t.id]!==false).map((t)=>option(t.id,t.label,a.typeId)).join('')}</select></div>
       <div class="field"><label>发生时间 *</label><input class="control anomaly-input" data-field="occurredSecond" type="number" min="0" max="${ss.duration*60}" value="${a.occurredSecond}" /></div>
       <div class="field"><label>问题对象</label><input class="control" value="${escapeHtml(isTeacher ? person(ss.teacherId)?.name : klass(ss.classId)?.name)}" disabled /></div>
     </div>`;
     const evidenceMeta = anomalyEvidenceMeta(a);
     const anomalyType = type(a.typeId) || {};
-    const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, ss.schoolId))}</div><dl class="anomaly-reading-grid"><dt>异常指标</dt><dd>${escapeHtml(anomalyType.label || '异常项')}</dd><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生时间</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>视频回看</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd></dl></div>`;
+    const readOnlyDetail = `<div class="anomaly-reading-detail"><div class="anomaly-reading-lead">${escapeHtml(anomalyRuleLabel(a, snapshot))}</div><dl class="anomaly-reading-grid"><dt>异常指标</dt><dd>${escapeHtml(anomalyType.label || '异常项')}</dd><dt>问题对象</dt><dd>${escapeHtml(anomalyObjectLabel(a))}</dd><dt>发生时间</dt><dd><button class="evidence-time-link" data-seek-evidence="${index}">${fmtClock(a.occurredSecond)}</button></dd><dt>视频回看</dt><dd>${escapeHtml(evidenceMeta.camera)} · ${escapeHtml(evidenceMeta.range)}</dd></dl></div>`;
     return `<div class="anomaly-form" data-anomaly-form="${index}">
       <div class="source-line"><div>${tag(['分析异常','blue'])}</div>${readOnly?'':`<button class="text-link danger-text" id="delete-anomaly">删除异常项</button>${isEditing?'':'<button class="text-link" id="edit-anomaly">修改异常</button>'}`}</div>
       ${isEditing?editFields:readOnlyDetail}
@@ -1094,7 +1270,7 @@
     const group = db.categoryGroups[groupId];
     if (!group) return;
     const insight = lessonInsightData(source, draft, ss);
-    const groupTypes = db.anomalyTypes.filter((item) => categoryMatches(item.category, groupId) && db.rules[ss.schoolId]?.enabledTypes?.[item.id] !== false);
+    const groupTypes = insight.enabledTypes.filter((item) => categoryMatches(item.category, groupId));
     const groupIssues = insight.visible.filter((item) => categoryMatches(type(item.typeId)?.category, groupId));
     const issueTypeIds = unique(groupIssues.map((item) => item.typeId));
     const normalCount = groupTypes.filter((item) => insight.statusByType[item.id]?.state === 'normal').length;
@@ -1103,7 +1279,7 @@
         const isIssue = occurrences.length > 0;
         const metricStatus = insight.statusByType[item.id] || { state: 'normal' };
         const isUnavailable = metricStatus.state === 'unavailable';
-        const meta = ruleCriteriaSummary(item, db.rules[ss.schoolId]);
+        const meta = ruleCriteriaSummary(item, insight.ruleSnapshot);
         const result = isIssue
           ? `<div class="metric-insight-result issue-result"><span>发现 ${occurrences.length} 项</span>${occurrences.map((issue) => `<button data-portrait-seek="${draft.anomalies.indexOf(issue)}">${fmtClock(issue.occurredSecond)} 回看</button>`).join('')}</div>`
           : isUnavailable
@@ -1304,7 +1480,7 @@
       <div class="rule-layout${readOnly?' read-only':''}"><nav class="rule-nav"><a data-scroll="rule-window">分析时段</a><a data-scroll="rule-teacher">教师课堂行为</a><a data-scroll="rule-student">学生行为</a></nav><div>
         <section class="card rule-section" id="rule-window"><div class="card-header"><div><div class="card-title">分析时段</div><div class="muted">严格以课表开始、结束时间为边界</div></div></div><div class="card-body"><div class="rule-repeat-row"><div class="rule-name">课前分析时长</div><div class="repeat-config"><label><input class="control rule-window-input" data-window="preClassMinutes" type="number" min="5" max="20" step="1" value="${draft.preClassMinutes ?? 10}" ${readOnly?'disabled':''}/><span>分钟</span></label></div></div><div class="rule-repeat-row"><div class="rule-name">课后分析时长</div><div class="repeat-config"><label><input class="control rule-window-input" data-window="postClassMinutes" type="number" min="5" max="20" step="1" value="${draft.postClassMinutes ?? 10}" ${readOnly?'disabled':''}/><span>分钟</span></label></div></div></div></section>
         ${groups.map((group)=>ruleTypeSection(group,draft,readOnly)).join('')}
-        ${readOnly?'':`<div class="rule-footer"><button class="btn" id="discard-rules" ${hasChanges?'':'disabled'}>恢复当前规则</button><button class="btn primary" id="save-rules" ${hasChanges?'':'disabled'}>保存巡课规则</button></div>`}
+        ${readOnly?'':`<div class="rule-footer${hasChanges?' is-sticky':''}"><button class="btn" id="discard-rules" ${hasChanges?'':'disabled'}>恢复当前规则</button><button class="btn primary" id="save-rules" ${hasChanges?'':'disabled'}>保存巡课规则</button></div>`}
       </div></div>
     </section>`;
     return {html,setup:()=>bindRules(viewSchoolId,draft,readOnly)};

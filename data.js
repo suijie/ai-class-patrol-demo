@@ -1,6 +1,6 @@
 (function () {
   const DEMO_NOW = '2026-08-18T11:30:00+08:00';
-  const DEMO_VERSION = 'V0.63';
+  const DEMO_VERSION = 'V0.64';
   const anomalyTypes = [
     { id: 'teacher_absent', category: 'teacher', label: '教师考勤', ruleLabel: '迟到、早退分别判定，任一命中即触发', defaultSeverity: 'important', criteria: [
       { id: 'late_minutes', label: '迟到', operatorLabel: '超过', defaultValue: 5, unit: '分钟', min: 1, max: 30, help: '超过课表上课时间仍未到岗' },
@@ -223,6 +223,8 @@
       }
     });
 
+    const defaultEnabledTypes = anomalyTypes.reduce((acc, item) => { acc[item.id] = item.defaultEnabled !== false; return acc; }, {});
+    const defaultCriteria = anomalyTypes.reduce((acc, item) => { acc[item.id] = Object.fromEntries((item.criteria || []).map((criterion) => [criterion.id, criterion.defaultValue])); return acc; }, {});
     const taskCycle = ['complete_issue', 'complete_issue', 'complete_none', 'partial', 'complete_issue', 'failed', 'waiting', 'analyzing'];
     const tasks = sessions.map((session, index) => {
       const status = taskCycle[index % taskCycle.length];
@@ -243,7 +245,7 @@
         completedAt: ['complete_issue', 'complete_none', 'partial', 'failed'].includes(status) ? day(Math.max(0, 1 + (index % 27)), 17, 20) : null,
         failures,
         modelVersion: `classroom-ai-2.${3 + (index % 3)}`,
-        ruleSnapshot: { version: `R${1 + (index % 4)}.0`, capturedAt: session.startAt }
+        ruleSnapshot: { version: `R${1 + (index % 4)}.0`, capturedAt: session.startAt, enabledTypes: JSON.parse(JSON.stringify(defaultEnabledTypes)), criteria: JSON.parse(JSON.stringify(defaultCriteria)) }
       };
     });
 
@@ -335,6 +337,14 @@
             }]
           : []
       };
+    });
+
+    // 历史结果严格使用课堂创建时的规则快照；种子异常和失败指标必须属于当时启用的指标。
+    clues.forEach((clue) => {
+      const sourceTask = tasks.find((item) => item.id === clue.taskId);
+      [...clue.anomalies, ...(sourceTask?.failures || [])].forEach((item) => {
+        if (item.typeId && item.typeId !== 'all') sourceTask.ruleSnapshot.enabledTypes[item.typeId] = true;
+      });
     });
 
     // 让李明远在近30天重复出现同一类型，支持重点提醒演示。
@@ -456,8 +466,15 @@
       notifications.push({ ...personalNotice, id: `n${noticeNo++}`, kind: 'withdraw', title: '课堂巡课问题撤回通知', sentAt: day(2, 11, 10), before: personalNotice.anomalyIds, after: [], beforeSnapshot: JSON.parse(JSON.stringify(personalNotice.afterSnapshot)), afterSnapshot: [], read: true });
     }
 
+    const exportRecords = [
+      { id: 'export-ready-p10', userId: 'p10', fileName: 'AI巡课分析结果_20260817.xls', createdAt: day(1, 15, 20), status: 'ready', expiresAt: day(-13, 15, 20), snapshot: [] },
+      { id: 'export-failed-p10', userId: 'p10', fileName: 'AI巡课分析结果_20260816.xls', createdAt: day(2, 10, 5), status: 'failed', expiresAt: '', snapshot: [] },
+      { id: 'export-ready-p90', userId: 'p90', fileName: '青川区AI巡课分析结果_20260817.xls', createdAt: day(1, 14, 10), status: 'ready', expiresAt: day(-13, 14, 10), snapshot: [] },
+      { id: 'export-failed-p90', userId: 'p90', fileName: '青川区AI巡课分析结果_20260816.xls', createdAt: day(2, 9, 30), status: 'failed', expiresAt: '', snapshot: [] }
+    ];
+
     return {
-      schemaVersion: 19,
+      schemaVersion: 20,
       demoVersion: DEMO_VERSION,
       generatedAt: DEMO_NOW,
       region,
@@ -470,6 +487,7 @@
       clues,
       formalIssues,
       notifications,
+      exportRecords,
       rules,
       anomalyTypes,
       categories,

@@ -139,6 +139,18 @@ a { color: inherit; text-decoration: none; }
 .filter-drawer-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 .filter-drawer-grid .field { min-width:0; }
 .filter-drawer-grid .select-control, .filter-drawer-grid .select-trigger { min-width:100%; width:100%; }
+.multi-filter-grid { align-items:start; }
+.multi-filter-field { min-width:0; padding:12px; border:1px solid #e6e9ee; border-radius:5px; background:#fafbfc; }
+.multi-filter-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+.multi-filter-heading strong { color:var(--title); font-size:13px; }
+.multi-filter-heading span { color:var(--desc); font-size:11px; }
+.multi-filter-search .control { width:100%; }
+.multi-filter-options { max-height:146px; margin-top:8px; overflow:auto; border-top:1px solid #edf0f2; }
+.multi-filter-options label { min-height:34px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #f0f2f4; color:var(--text); font-size:12px; cursor:pointer; }
+.multi-filter-options label:last-child { border-bottom:0; }
+.multi-filter-options label[hidden] { display:none; }
+.multi-filter-options input { accent-color:var(--theme); }
+.filter-drawer-actions { gap:10px; padding-top:16px; border-top:1px solid #edf0f2; }
 .drawer-actions { display:flex; justify-content:flex-end; margin-top:24px; }
 .field { display:flex; flex-direction:column; gap:5px; min-width:140px; }
 .field.inline { flex-direction:row; align-items:center; min-width:auto; }
@@ -229,6 +241,11 @@ select.enhanced-native { position:absolute !important; width:1px !important; hei
 .donut::after { content:""; position:absolute; inset:28px; background:#fff; border-radius:50%; }
 .donut-center { position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; color:var(--title); font-weight:700; font-size:20px; }
 .donut-center span { display:block; font-size:11px; font-weight:400; color:var(--desc); }
+.distribution-grid { height:auto; min-height:270px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:0; padding:0; }
+.distribution-grid > section { min-width:0; padding:18px; }
+.distribution-grid > section + section { border-left:1px solid #edf0f2; }
+.distribution-grid h3 { margin:0 0 14px; color:var(--desc); font-size:12px; font-weight:500; }
+.distribution-grid .donut-wrap { min-height:190px; }
 .legend { display:flex; flex-direction:column; gap:11px; }
 .legend-item { display:flex; align-items:center; justify-content:space-between; gap:18px; min-width:160px; font-size:13px; }
 .legend-name { display:flex; align-items:center; gap:8px; }
@@ -240,7 +257,18 @@ select.enhanced-native { position:absolute !important; width:1px !important; hei
 
 .table-wrap { border:1px solid #eceef1; border-radius:4px; overflow:auto; background:#fff; }
 table { width:100%; min-width:960px; border-collapse:collapse; table-layout:fixed; }
-.analysis-result-table { min-width:860px; }
+.analysis-result-table { min-width:1080px; }
+.analysis-result-table td { height:62px; }
+.class-time-cell { width:122px; }
+.class-time-cell span, .class-time-cell small, .stacked-cell span, .stacked-cell small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.class-time-cell small, .stacked-cell small { margin-top:2px; color:var(--desc); font-size:11px; line-height:16px; }
+.teacher-subject-cell { width:108px; }
+.class-room-cell { width:172px; }
+.analysis-result-summary { display:flex; align-items:center; gap:6px; min-width:0; white-space:normal; }
+.analysis-result-issues { min-width:0; overflow:hidden; color:var(--text); line-height:19px; text-overflow:ellipsis; }
+.analysis-result-issues em { display:inline-flex; margin-left:5px; padding:0 5px; border-radius:3px; background:#f2f4f7; color:var(--desc); font-size:11px; font-style:normal; white-space:nowrap; }
+.analysis-result-failure { flex:0 0 auto; padding:1px 5px; border-radius:3px; background:#fff4df; color:#c47b00; font-size:11px; cursor:help; white-space:nowrap; }
+.analysis-result-normal { color:#4c9a66; }
 th { height:48px; background:#f5f5f5; color:var(--title); font-weight:400; font-size:14px; text-align:left; padding:0 16px; border-bottom:1px solid #e4e4e4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 td { height:52px; padding:0 16px; border-bottom:1px solid #eeeeef; color:var(--text); font-size:14px; font-weight:400; line-height:20px; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 th:last-child, td:last-child { width:92px; }
@@ -386,7 +414,8 @@ tbody tr.clickable:hover { background:#f6f9ff; }
 .switch:checked::after { left:18px; }
 .switch:disabled, .switch:disabled:checked { cursor:not-allowed; background:#d8dce2; }
 .switch:disabled::after { background:#f8f9fa; box-shadow:none; }
-.rule-footer { position:sticky; bottom:0; background:rgba(255,255,255,.96); border-top:1px solid #e8eaed; padding:14px 18px; display:flex; justify-content:flex-end; gap:10px; box-shadow:0 -4px 14px rgba(28,29,30,.05); }
+.rule-footer { position:static; background:rgba(255,255,255,.96); border-top:1px solid #e8eaed; padding:14px 18px; display:flex; justify-content:flex-end; gap:10px; }
+.rule-footer.is-sticky { position:sticky; bottom:0; z-index:4; box-shadow:0 -4px 14px rgba(28,29,30,.05); }
 .rule-save-summary { margin-bottom:12px; padding:12px 14px; border:1px solid #e2e8f1; border-radius:5px; background:#f8fafc; }
 .rule-save-summary strong { color:var(--title); font-size:13px; }
 .rule-save-summary ul { margin:8px 0 0; padding-left:18px; color:var(--text); font-size:12px; line-height:20px; }
@@ -446,9 +475,15 @@ tbody tr.clickable:hover { background:#f6f9ff; }
 .read-only-banner { padding:10px 12px; background:#f4f7fb; border:1px solid #e2e7ed; border-radius:4px; color:#687385; margin-bottom:14px; }
 
 .school-rank { counter-reset:rank; }
-.rank-row { display:grid; grid-template-columns:32px 1fr 70px; align-items:center; gap:8px; min-height:38px; border-bottom:1px solid #f0f1f3; }
+.rank-row { display:grid; grid-template-columns:32px minmax(110px,1fr) 74px 74px 74px; align-items:center; gap:8px; min-height:46px; border-bottom:1px solid #f0f1f3; }
 .rank-row:last-child { border-bottom:0; }
 .rank-row-with-school { min-height:54px; }
+.rank-table-head { display:grid; grid-template-columns:32px minmax(110px,1fr) 74px 74px 74px; align-items:center; gap:8px; min-height:34px; color:var(--desc); font-size:11px; border-bottom:1px solid #e7eaee; }
+.rank-table-head span:nth-child(n+3), .rank-row > span:nth-child(n+3) { text-align:right; white-space:nowrap; }
+.rank-drawer-list { margin-top:12px; }
+.school-rank-drawer { overflow:auto; }
+.school-overview-row.static { cursor:default; }
+.school-overview-row.static:hover { background:#fff; }
 .rank-no { width:23px; height:23px; border-radius:5px; display:grid; place-items:center; background:#edf0f4; color:#7c818a; font-size:11px; }
 .rank-row:nth-child(1) .rank-no { background:#fff0d5; color:#d58a00; }
 .rank-row:nth-child(2) .rank-no { background:#edf1f5; color:#69727c; }
@@ -478,6 +513,9 @@ tbody tr.clickable:hover { background:#f6f9ff; }
 .analysis-result-table .table-action-cell { width:104px; overflow:visible; text-overflow:clip; }
 .analysis-result-table .table-action-link { display:inline-flex; align-items:center; min-width:max-content; white-space:nowrap; }
 .nowrap { white-space:nowrap; }
+.export-record-table { margin-top:12px; }
+.export-record-table table { min-width:780px; }
+.export-record-table th:first-child, .export-record-table td:first-child { width:210px; }
 
 /* 课堂分析结果：沿用巡课详情的“视频主舞台 + 按需操作抽屉”结构。 */
 .analysis-result-page { padding-top:18px; padding-bottom:24px; }
@@ -707,6 +745,10 @@ tbody tr.clickable:hover { background:#f6f9ff; }
   .donut::after { inset:23px; }
   .legend { gap:9px; }
   .legend-item { min-width:116px; gap:12px; font-size:12px; }
+  .page-body { padding-left:20px; padding-right:20px; }
+  .analysis-result-table { min-width:850px; }
+  .analysis-result-table th, .analysis-result-table td { padding-left:10px; padding-right:10px; font-size:13px; }
+  .analysis-result-table .table-action-cell { width:82px; }
 }
 
 @media (max-width: 980px) {
